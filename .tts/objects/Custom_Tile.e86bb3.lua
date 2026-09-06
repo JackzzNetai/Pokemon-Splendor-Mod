@@ -53,18 +53,41 @@ function spawnTokenStack(tokenKey, count, config)
     end
 end
 
+function findReadyDeck(tag, zone, expected, allowExtra)
+    for _, obj in ipairs(getObjectsWithTag(tag)) do
+        if (obj.type == "Deck" or obj.tag == "Deck") and not obj.isDestroyed() then
+            local pos = obj.getPosition()
+            local inExcludeZone = (pos.x >= zone.xMin and pos.x <= zone.xMax and
+                                   pos.z >= zone.zMin and pos.z <= zone.zMax)
+            if not inExcludeZone then
+                local quantity = obj.getQuantity()
+                if allowExtra then
+                    if quantity >= expected then
+                        return obj
+                    end
+                elseif quantity == expected then
+                    return obj
+                end
+            end
+        end
+    end
+    return nil
+end
+
 function SetupDeck(deckKey, dealCount, isRowDeal, config)
     local tag = config.TAGS[deckKey]
     local targetPos = config.DECK_POSITIONS[deckKey]
+    local expected = config.DECK_SIZES[deckKey]
+    local allowExtra = (deckKey == "rare" or deckKey == "legendary")
+    local zone = config.EXCLUDE_ZONE
     local cardList = {}
 
     -- 1. Gather all cards OUTSIDE the exclude zone
     for _, obj in ipairs(getObjectsWithTag(tag)) do
         local pos = obj.getPosition()
-        local zone = config.EXCLUDE_ZONE
-        local inExcludeZone = (pos.x >= zone.xMin and pos.x <= zone.xMax and 
+        local inExcludeZone = (pos.x >= zone.xMin and pos.x <= zone.xMax and
                                pos.z >= zone.zMin and pos.z <= zone.zMax)
-        
+
         if not inExcludeZone then
             table.insert(cardList, obj)
         end
@@ -73,28 +96,22 @@ function SetupDeck(deckKey, dealCount, isRowDeal, config)
     if #cardList == 0 then return end
     group(cardList)
 
-    -- 2. Wait for physics to merge the new deck
-    Wait.time(function()
-        local newDeck = nil
-        local zone = config.EXCLUDE_ZONE
+    -- 2. Wait until the merged deck reaches the expected quantity
+    -- Wait.condition(toRunFunc, conditionFunc, timeout, timeoutFunc)
+    Wait.condition(
+        function()
+            local newDeck = findReadyDeck(tag, zone, expected, allowExtra)
+            if not newDeck then return end
 
-        for _, obj in ipairs(getObjectsWithTag(tag)) do
-            -- obj.type is the modern standard, obj.tag is the legacy fallback
-            if obj.type == "Deck" or obj.tag == "Deck" then 
-                local pos = obj.getPosition()
-                local inExcludeZone = (pos.x >= zone.xMin and pos.x <= zone.xMax and 
-                                       pos.z >= zone.zMin and pos.z <= zone.zMax)
-                
-                -- 3. ONLY grab the deck if it is safely outside the exclude zone
-                if not inExcludeZone then
-                    newDeck = obj 
-                    break 
-                end
+            if allowExtra and newDeck.getQuantity() > expected then
+                printToAll(
+                    "Warning: " .. deckKey .. " deck has " .. newDeck.getQuantity() ..
+                    " cards (expected " .. expected .. ").",
+                    {1, 0.6, 0}
+                )
             end
-        end
 
-        -- 4. Move, shuffle, and deal
-        if newDeck and not newDeck.isDestroyed() then
+            -- 3. Move, shuffle, and deal
             newDeck.setRotation({180, 0, 0})
             newDeck.randomize()
             newDeck.setPositionSmooth(targetPos, false, false)
@@ -111,16 +128,19 @@ function SetupDeck(deckKey, dealCount, isRowDeal, config)
                     end
                 end
             end
+        end,
+        function()
+            return findReadyDeck(tag, zone, expected, allowExtra) ~= nil
+        end,
+        5,
+        function()
+            printToAll("SetupDeck timed out for " .. deckKey, {1, 0.4, 0})
         end
-    end, 0.6)
+    )
 end
 
 function onSetupButtonClicked(clickedObject, playerColor, isAltClick)
     local config = Global.getTable("CONFIG")
-    if not config then
-        printToColor("Error: CONFIG table not found in Global script.", playerColor, {1,0,0})
-        return
-    end
 
     local activePlayerCount = #Player.getPlayers() - #Player.getSpectators()
     local standardTokenCount = 7

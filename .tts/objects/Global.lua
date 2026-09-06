@@ -31,6 +31,14 @@ CONFIG = {
         legendary  = {8.91,  CONSTANTS.DECK_Y, 4.10}
     },
 
+    DECK_SIZES = {
+        stage1     = 35,
+        stage2     = 30,
+        stage3     = 15,
+        rare       = 5,
+        legendary  = 5
+    },
+
     DEAL_LAYOUT = {
         startX     = -4.789,
         offsetX    = 3.2,
