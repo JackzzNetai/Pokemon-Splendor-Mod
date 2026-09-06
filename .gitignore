@@ -1,3 +1,9 @@
 .DS_Store
-/.tts
 /__pycache__
+
+# Ignore .tts contents, but keep selected object scripts
+/.tts/*
+!/.tts/objects/
+/.tts/objects/*
+!/.tts/objects/Custom_Tile.e86bb3.lua
+!/.tts/objects/Global.lua
