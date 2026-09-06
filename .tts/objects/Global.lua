@@ -590,24 +590,26 @@ CARD_DATABASE = {
 }
 
 
-function getDiscount(card_id)
-    local discount_type = card_id:match("^([^_]+)")
+function getDiscount(parts)
+    local discount_type = parts[1]
     local amount = 1
-    if card_id:find("_rare_", 1, true) or card_id:find("_legendary_", 1, true) then
+    local tier = parts[2]
+    if tier == "rare" or tier == "legendary" then
         amount = 2
     end
     return { [discount_type] = amount }
 end
 
-function getVp(card_id)
-    if card_id:find("_rare_", 1, true) then
+function getVp(parts)
+    local tier = parts[2]
+    if tier == "rare" then
         return 0
     end
-    if card_id:find("_legendary_", 1, true) then
+    if tier == "legendary" then
         return 2
     end
-    local stage, family = card_id:match("_stage(%d+)_(%d+)")
-    stage, family = tonumber(stage), tonumber(family)
+    local stage = tonumber(tier:match("^stage(%d+)$"))
+    local family = tonumber(parts[3])
     if stage == 1 then
         return (family == 3) and 1 or 0
     end
@@ -794,8 +796,12 @@ end
 
 function onLoad()
     for card_id, entry in pairs(CARD_DATABASE) do
-        entry.discount = getDiscount(card_id)
-        entry.vp = getVp(card_id)
+        local parts = {}
+        for part in string.gmatch(card_id, "[^_]+") do
+            table.insert(parts, part)
+        end
+        entry.discount = getDiscount(parts)
+        entry.vp = getVp(parts)
     end
 end
 
