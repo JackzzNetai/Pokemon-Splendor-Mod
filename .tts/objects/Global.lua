@@ -69,6 +69,25 @@ CONFIG = {
         xMax = 10.7,
         zMin = 15.8,
         zMax = 22.3
+    },
+
+    PLAYER_ZONES = {
+        Purple = {
+            cards = { "", "", "", "", "" },
+            balls = "",
+        },
+        Red = {
+            cards = { "", "", "", "", "" },
+            balls = "",
+        },
+        Green = {
+            cards = { "671ca5", "319bdb", "28ca61", "23c633", "68c2da" },
+            balls = "b38317",
+        },
+        Pink = {
+            cards = { "", "", "", "", "" },
+            balls = "",
+        },
     }
 }
 
@@ -866,6 +885,120 @@ function onObjectDestroy(object)
     pendingTakes[object.getGUID()] = nil
 end
 
+-- ============================================================================
+-- Player ball token counts (one Layout Zone per color)
+-- ============================================================================
+
+local BALL_TYPES = {
+    pokeball   = true,
+    greatball  = true,
+    ultraball  = true,
+    healball   = true,
+    quickball  = true,
+    masterball = true,
+}
+
+playerBalls = {}
+local ballsZoneGuidToColor = {}
+
+local function emptyBallCounts()
+    local counts = {}
+    for ballType, _ in pairs(BALL_TYPES) do
+        counts[ballType] = 0
+    end
+    return counts
+end
+
+local function ballTypeOf(object)
+    if object == nil or object.isDestroyed() then
+        return nil
+    end
+    local tags = object.getTags()
+    if tags == nil then
+        return nil
+    end
+    local tag = tags[1]
+    if tag ~= nil and BALL_TYPES[tag] then
+        return tag
+    end
+    return nil
+end
+
+local function buildBallsZoneIndex()
+    ballsZoneGuidToColor = {}
+    for color, zones in pairs(CONFIG.PLAYER_ZONES) do
+        local guid = zones.balls
+        if guid ~= nil and guid ~= "" then
+            ballsZoneGuidToColor[guid] = color
+        end
+    end
+end
+
+local function applyBallDelta(color, object, sign)
+    local ballType = ballTypeOf(object)
+    if ballType == nil then
+        return
+    end
+    if playerBalls[color] == nil then
+        playerBalls[color] = emptyBallCounts()
+    end
+    local counts = playerBalls[color]
+    local nextCount = counts[ballType] + sign
+    if nextCount < 0 then
+        printToAll(
+            "Warning: " .. color .. " " .. ballType .. " count would go negative; clamped to 0.",
+            {1, 0.6, 0}
+        )
+        counts[ballType] = 0
+        return
+    end
+    counts[ballType] = nextCount
+end
+
+local function initPlayerBallsFromZones()
+    buildBallsZoneIndex()
+    playerBalls = {}
+
+    for color, zones in pairs(CONFIG.PLAYER_ZONES) do
+        local counts = emptyBallCounts()
+        local guid = zones.balls
+        if guid ~= nil and guid ~= "" then
+            local zone = getObjectFromGUID(guid)
+            if zone ~= nil then
+                for _, obj in ipairs(zone.getObjects()) do
+                    local ballType = ballTypeOf(obj)
+                    if ballType ~= nil then
+                        counts[ballType] = counts[ballType] + 1
+                    end
+                end
+            end
+        end
+        playerBalls[color] = counts
+    end
+end
+
+function onObjectEnterZone(zone, object)
+    if zone == nil or object == nil then
+        return
+    end
+    local color = ballsZoneGuidToColor[zone.getGUID()]
+    if color == nil then
+        return
+    end
+    applyBallDelta(color, object, 1)
+end
+
+function onObjectLeaveZone(zone, object)
+    if zone == nil or object == nil then
+        return
+    end
+    local color = ballsZoneGuidToColor[zone.getGUID()]
+    if color == nil then
+        return
+    end
+    applyBallDelta(color, object, -1)
+end
+
 function onLoad()
     for card_id, entry in pairs(CARD_DATABASE) do
         local parts = {}
@@ -875,6 +1008,7 @@ function onLoad()
         entry.discount = getDiscount(parts)
         entry.vp = getVp(parts)
     end
+    initPlayerBallsFromZones()
 end
 
 
