@@ -622,12 +622,14 @@ function getVp(parts)
 end
 
 -- ============================================================================
--- Market refill (stage1 / stage2 / stage3)
+-- Market refill (stage rows + rare/legendary piles) — raycast occupancy
 -- ============================================================================
 
-local SLOT_TOLERANCE = 0.3
 local SLOT_COUNT = 4
-local MARKET_TIERS = {"stage1", "stage2", "stage3"}
+local ROW_TIERS = {"stage1", "stage2", "stage3"}
+local PILE_TIERS = {"rare", "legendary"}
+local RAY_ORIGIN_Y_OFFSET = 2
+local RAY_MAX_DISTANCE = 5
 
 gameInitialized = false
 local pendingTakes = {}
@@ -639,18 +641,61 @@ function setGameInitialized(value)
     end
 end
 
-local function xzDistSq(pos, slotPos)
-    local px = pos.x or pos[1]
-    local pz = pos.z or pos[3]
-    local sx = slotPos[1] or slotPos.x
-    local sz = slotPos[3] or slotPos.z
-    local dx = px - sx
-    local dz = pz - sz
-    return dx * dx + dz * dz
+local function posXYZ(position)
+    return position[1] or position.x, position[2] or position.y, position[3] or position.z
 end
 
-local function withinTolerance(pos, slotPos)
-    return xzDistSq(pos, slotPos) <= SLOT_TOLERANCE * SLOT_TOLERANCE
+local function castDownAt(position)
+    local x, y, z = posXYZ(position)
+    return Physics.cast({
+        origin       = {x, y + RAY_ORIGIN_Y_OFFSET, z},
+        direction    = {0, -1, 0},
+        type         = 1, -- Ray
+        max_distance = RAY_MAX_DISTANCE,
+        debug        = false,
+    })
+end
+
+local function faceUpCardAt(position)
+    local hits = castDownAt(position)
+    for _, hit in ipairs(hits) do
+        local obj = hit.hit_object
+        if obj ~= nil and not obj.isDestroyed() and obj.type == "Card" and not obj.is_face_down then
+            return true
+        end
+    end
+    return false
+end
+
+local function objectAt(position, object)
+    if object == nil or object.isDestroyed() then
+        return false
+    end
+    local guid = object.getGUID()
+    local hits = castDownAt(position)
+    for _, hit in ipairs(hits) do
+        local obj = hit.hit_object
+        if obj ~= nil and not obj.isDestroyed() and obj.getGUID() == guid then
+            return true
+        end
+    end
+    return false
+end
+
+local function deckSourceAt(position)
+    local hits = castDownAt(position)
+    for _, hit in ipairs(hits) do
+        local obj = hit.hit_object
+        if obj ~= nil and not obj.isDestroyed() then
+            if obj.type == "Deck" then
+                return obj
+            end
+            if obj.type == "Card" and obj.is_face_down then
+                return obj
+            end
+        end
+    end
+    return nil
 end
 
 local function getSlotPosition(tier, slotIndex)
@@ -663,17 +708,25 @@ local function getSlotPosition(tier, slotIndex)
     }
 end
 
-local function findMarketSlot(object)
+local function getPileRevealPosition(tier)
+    local deckPos = CONFIG.DECK_POSITIONS[tier]
+    return {
+        deckPos[1],
+        CONFIG.DEAL_LAYOUT.stackY,
+        deckPos[3]
+    }
+end
+
+local function findRowSlot(object)
     if object == nil or object.isDestroyed() then
         return nil
     end
-    local pos = object.getPosition()
-    for _, tier in ipairs(MARKET_TIERS) do
+    for _, tier in ipairs(ROW_TIERS) do
         if object.hasTag(CONFIG.TAGS[tier]) then
             for i = 0, SLOT_COUNT - 1 do
                 local slotPos = getSlotPosition(tier, i)
-                if withinTolerance(pos, slotPos) then
-                    return { tier = tier, slotIndex = i, position = slotPos }
+                if objectAt(slotPos, object) then
+                    return { kind = "row", tier = tier, slotIndex = i, position = slotPos }
                 end
             end
         end
@@ -681,32 +734,26 @@ local function findMarketSlot(object)
     return nil
 end
 
-local function isSlotOccupied(tier, slotIndex)
-    local slotPos = getSlotPosition(tier, slotIndex)
-    local tag = CONFIG.TAGS[tier]
-    for _, obj in ipairs(getObjectsWithTag(tag)) do
-        if not obj.isDestroyed() and obj.type == "Card" then
-            if withinTolerance(obj.getPosition(), slotPos) then
-                return true
-            end
-        end
+local function findPileFaceUp(object)
+    if object == nil or object.isDestroyed() then
+        return nil
     end
-    return false
-end
-
-local function findTierDeck(tier)
-    local tag = CONFIG.TAGS[tier]
-    local target = CONFIG.DECK_POSITIONS[tier]
-
-    for _, obj in ipairs(getObjectsWithTag(tag)) do
-        if not obj.isDestroyed() and withinTolerance(obj.getPosition(), target) then
-            -- Deck pile, or the last remaining card still sitting on the pile spot
-            if obj.type == "Deck" or obj.type == "Card" then
-                return obj
+    if object.is_face_down then
+        return nil
+    end
+    for _, tier in ipairs(PILE_TIERS) do
+        if object.hasTag(CONFIG.TAGS[tier]) then
+            local pilePos = getPileRevealPosition(tier)
+            if objectAt(pilePos, object) then
+                return { kind = "pile", tier = tier, position = pilePos }
             end
         end
     end
     return nil
+end
+
+local function findTierDeck(tier)
+    return deckSourceAt(CONFIG.DECK_POSITIONS[tier])
 end
 
 local function refillSlot(tier, slotIndex)
@@ -727,11 +774,35 @@ local function refillSlot(tier, slotIndex)
             card.setPositionSmooth(slotPos, false, false)
         end
     else
-        -- Last remaining face-down card acting as the deck
         if deck.is_face_down then
             deck.flip()
         end
         deck.setPositionSmooth(slotPos, false, false)
+    end
+end
+
+local function revealPileTop(tier)
+    local deck = findTierDeck(tier)
+    if deck == nil or deck.isDestroyed() then
+        return
+    end
+
+    local revealPos = getPileRevealPosition(tier)
+
+    if deck.type == "Deck" then
+        if deck.getQuantity() < 1 then
+            return
+        end
+        local card = deck.takeObject()
+        if card then
+            card.flip()
+            card.setPositionSmooth(revealPos, false, false)
+        end
+    else
+        if deck.is_face_down then
+            deck.flip()
+        end
+        deck.setPositionSmooth(revealPos, false, false)
     end
 end
 
@@ -745,11 +816,14 @@ function onObjectPickUp(player_color, object)
     if object.type ~= "Card" then
         return
     end
-    local slot = findMarketSlot(object)
-    if slot == nil then
+    local pending = findRowSlot(object)
+    if pending == nil then
+        pending = findPileFaceUp(object)
+    end
+    if pending == nil then
         return
     end
-    pendingTakes[object.getGUID()] = slot
+    pendingTakes[object.getGUID()] = pending
 end
 
 function onObjectDrop(player_color, object)
@@ -774,16 +848,14 @@ function onObjectDrop(player_color, object)
         if not gameInitialized then
             return
         end
-        if object.isDestroyed() then
+        if faceUpCardAt(pending.position) then
             return
         end
-        if withinTolerance(object.getPosition(), pending.position) then
-            return
+        if pending.kind == "row" then
+            refillSlot(pending.tier, pending.slotIndex)
+        elseif pending.kind == "pile" then
+            revealPileTop(pending.tier)
         end
-        if isSlotOccupied(pending.tier, pending.slotIndex) then
-            return
-        end
-        refillSlot(pending.tier, pending.slotIndex)
     end, 0.1)
 end
 
