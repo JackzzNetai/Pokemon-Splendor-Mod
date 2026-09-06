@@ -875,7 +875,7 @@ function onObjectDrop(player_color, object)
         elseif pending.kind == "pile" then
             revealPileTop(pending.tier)
         end
-    end, 0.1)
+    end, 0.5)
 end
 
 function onObjectDestroy(object)
