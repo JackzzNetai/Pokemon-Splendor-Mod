@@ -55,7 +55,7 @@ end
 
 function findReadyDeck(tag, zone, expected, allowExtra)
     for _, obj in ipairs(getObjectsWithTag(tag)) do
-        if (obj.type == "Deck" or obj.tag == "Deck") and not obj.isDestroyed() then
+        if obj.type == "Deck" and not obj.isDestroyed() then
             local pos = obj.getPosition()
             local inExcludeZone = (pos.x >= zone.xMin and pos.x <= zone.xMax and
                                    pos.z >= zone.zMin and pos.z <= zone.zMax)
@@ -140,6 +140,8 @@ function SetupDeck(deckKey, dealCount, isRowDeal, config)
 end
 
 function onSetupButtonClicked(clickedObject, playerColor, isAltClick)
+    Global.call("setGameInitialized", false)
+
     local config = Global.getTable("CONFIG")
 
     local activePlayerCount = #Player.getPlayers() - #Player.getSpectators()
@@ -165,4 +167,5 @@ function onSetupButtonClicked(clickedObject, playerColor, isAltClick)
     spawnTokenStack("pokeball", standardTokenCount, config)
 
     printToAll("初始化完毕", {0.2, 0.8, 0.2})
+    Global.call("setGameInitialized", true)
 end

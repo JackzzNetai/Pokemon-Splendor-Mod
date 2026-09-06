@@ -619,6 +619,179 @@ function getVp(card_id)
     end
 end
 
+-- ============================================================================
+-- Market refill (stage1 / stage2 / stage3)
+-- ============================================================================
+
+local SLOT_TOLERANCE = 0.3
+local SLOT_COUNT = 4
+local MARKET_TIERS = {"stage1", "stage2", "stage3"}
+
+gameInitialized = false
+local pendingTakes = {}
+
+function setGameInitialized(value)
+    gameInitialized = value and true or false
+    if not gameInitialized then
+        pendingTakes = {}
+    end
+end
+
+local function xzDistSq(pos, slotPos)
+    local px = pos.x or pos[1]
+    local pz = pos.z or pos[3]
+    local sx = slotPos[1] or slotPos.x
+    local sz = slotPos[3] or slotPos.z
+    local dx = px - sx
+    local dz = pz - sz
+    return dx * dx + dz * dz
+end
+
+local function withinTolerance(pos, slotPos)
+    return xzDistSq(pos, slotPos) <= SLOT_TOLERANCE * SLOT_TOLERANCE
+end
+
+local function getSlotPosition(tier, slotIndex)
+    local layout = CONFIG.DEAL_LAYOUT
+    local deckPos = CONFIG.DECK_POSITIONS[tier]
+    return {
+        layout.startX + layout.offsetX * slotIndex,
+        layout.rowY,
+        deckPos[3]
+    }
+end
+
+local function findMarketSlot(object)
+    if object == nil or object.isDestroyed() then
+        return nil
+    end
+    local pos = object.getPosition()
+    for _, tier in ipairs(MARKET_TIERS) do
+        if object.hasTag(CONFIG.TAGS[tier]) then
+            for i = 0, SLOT_COUNT - 1 do
+                local slotPos = getSlotPosition(tier, i)
+                if withinTolerance(pos, slotPos) then
+                    return { tier = tier, slotIndex = i, position = slotPos }
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function isSlotOccupied(tier, slotIndex)
+    local slotPos = getSlotPosition(tier, slotIndex)
+    local tag = CONFIG.TAGS[tier]
+    for _, obj in ipairs(getObjectsWithTag(tag)) do
+        if not obj.isDestroyed() and obj.type == "Card" then
+            if withinTolerance(obj.getPosition(), slotPos) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function findTierDeck(tier)
+    local tag = CONFIG.TAGS[tier]
+    local target = CONFIG.DECK_POSITIONS[tier]
+
+    for _, obj in ipairs(getObjectsWithTag(tag)) do
+        if not obj.isDestroyed() and withinTolerance(obj.getPosition(), target) then
+            -- Deck pile, or the last remaining card still sitting on the pile spot
+            if obj.type == "Deck" or obj.type == "Card" then
+                return obj
+            end
+        end
+    end
+    return nil
+end
+
+local function refillSlot(tier, slotIndex)
+    local deck = findTierDeck(tier)
+    if deck == nil or deck.isDestroyed() then
+        return
+    end
+
+    local slotPos = getSlotPosition(tier, slotIndex)
+
+    if deck.type == "Deck" then
+        if deck.getQuantity() < 1 then
+            return
+        end
+        local card = deck.takeObject()
+        if card then
+            card.flip()
+            card.setPositionSmooth(slotPos, false, false)
+        end
+    else
+        -- Last remaining face-down card acting as the deck
+        if deck.is_face_down then
+            deck.flip()
+        end
+        deck.setPositionSmooth(slotPos, false, false)
+    end
+end
+
+function onObjectPickUp(player_color, object)
+    if not gameInitialized then
+        return
+    end
+    if object == nil or object.isDestroyed() then
+        return
+    end
+    if object.type ~= "Card" then
+        return
+    end
+    local slot = findMarketSlot(object)
+    if slot == nil then
+        return
+    end
+    pendingTakes[object.getGUID()] = slot
+end
+
+function onObjectDrop(player_color, object)
+    if object == nil or object.isDestroyed() then
+        return
+    end
+    local guid = object.getGUID()
+
+    if not gameInitialized then
+        pendingTakes[guid] = nil
+        return
+    end
+
+    local pending = pendingTakes[guid]
+    if pending == nil then
+        return
+    end
+    -- Clear immediately so a second drop event cannot double-refill; decide after snap settles
+    pendingTakes[guid] = nil
+
+    Wait.time(function()
+        if not gameInitialized then
+            return
+        end
+        if object.isDestroyed() then
+            return
+        end
+        if withinTolerance(object.getPosition(), pending.position) then
+            return
+        end
+        if isSlotOccupied(pending.tier, pending.slotIndex) then
+            return
+        end
+        refillSlot(pending.tier, pending.slotIndex)
+    end, 0.1)
+end
+
+function onObjectDestroy(object)
+    if object == nil then
+        return
+    end
+    pendingTakes[object.getGUID()] = nil
+end
+
 function onLoad()
     for card_id, entry in pairs(CARD_DATABASE) do
         entry.discount = getDiscount(card_id)
