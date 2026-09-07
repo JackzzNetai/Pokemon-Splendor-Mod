@@ -141,6 +141,7 @@ end
 
 function onSetupButtonClicked(clickedObject, playerColor, isAltClick)
     Global.call("setGameInitialized", false)
+    Global.call("clearPlayerStats")
 
     local config = Global.getTable("CONFIG")
 

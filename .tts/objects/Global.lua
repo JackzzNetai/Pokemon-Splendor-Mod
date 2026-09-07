@@ -700,7 +700,8 @@ local PILE_TIERS = {"rare", "legendary"}
 local RAY_ORIGIN_Y_OFFSET = 2
 local RAY_MAX_DISTANCE = 5
 
-gameInitialized = false
+-- Skipping false→true in onLoad: no player input there, and onLoad only reads/configures.
+gameInitialized = true
 local pendingTakes = {}
 
 function setGameInitialized(value)
@@ -791,7 +792,7 @@ local function findRowSlot(object)
         return nil
     end
     for _, tier in ipairs(ROW_TIERS) do
-        if object.hasTag(CONFIG.TAGS[tier]) then
+        if object.hasTag(tier) then
             for i = 0, SLOT_COUNT - 1 do
                 local slotPos = getSlotPosition(tier, i)
                 if objectAt(slotPos, object) then
@@ -811,7 +812,7 @@ local function findPileFaceUp(object)
         return nil
     end
     for _, tier in ipairs(PILE_TIERS) do
-        if object.hasTag(CONFIG.TAGS[tier]) then
+        if object.hasTag(tier) then
             local pilePos = getPileRevealPosition(tier)
             if objectAt(pilePos, object) then
                 return { kind = "pile", tier = tier, position = pilePos }
@@ -949,6 +950,8 @@ local BALL_TYPES = {
     masterball = true
 }
 
+local WARN_ORANGE = {1, 0.6, 0}
+
 playerBalls = {}
 playerDiscounts = {}
 playerVp = {}
@@ -970,6 +973,10 @@ local function emptyBallCounts()
     return counts
 end
 
+local function hasGuid(guid)
+    return guid ~= nil and guid ~= ""
+end
+
 local function ballTypeOf(object)
     if object == nil or object.isDestroyed() then
         return nil
@@ -985,27 +992,33 @@ local function ballTypeOf(object)
     return nil
 end
 
-local function buildBallsZoneIndex()
+local function buildPlayerZoneIndexes()
     ballsZoneGuidToColor = {}
-    for color, zones in pairs(CONFIG.PLAYER_ZONES) do
-        local guid = zones.balls
-        if guid ~= nil and guid ~= "" then
-            ballsZoneGuidToColor[guid] = color
-        end
-    end
-end
-
-local function buildCardsZoneIndex()
     cardsZoneGuidToColor = {}
     for color, zones in pairs(CONFIG.PLAYER_ZONES) do
-        local cardGuids = zones.cards
-        if cardGuids ~= nil then
-            for _, guid in ipairs(cardGuids) do
-                if guid ~= nil and guid ~= "" then
+        if hasGuid(zones.balls) then
+            ballsZoneGuidToColor[zones.balls] = color
+        end
+        if zones.cards ~= nil then
+            for _, guid in ipairs(zones.cards) do
+                if hasGuid(guid) then
                     cardsZoneGuidToColor[guid] = color
                 end
             end
         end
+    end
+end
+
+local function forEachZoneObject(guid, fn)
+    if not hasGuid(guid) then
+        return
+    end
+    local zone = getObjectFromGUID(guid)
+    if zone == nil then
+        return
+    end
+    for _, obj in ipairs(zone.getObjects()) do
+        fn(obj)
     end
 end
 
@@ -1023,11 +1036,18 @@ local function resolveCard(object, color)
         printToAll(
             "Warning: " .. tostring(color) .. " card GM note '" .. tostring(id)
                 .. "' (GUID " .. object.getGUID() .. ") not in CARD_DATABASE.",
-            {1, 0.6, 0}
+            WARN_ORANGE
         )
         return nil, nil
     end
     return id, entry
+end
+
+local function setTextToolValue(obj, value)
+    if obj == nil or obj.isDestroyed() then
+        return
+    end
+    obj.TextTool.setValue(tostring(value))
 end
 
 local function setDisplayTextValue(store, color, ballType, count)
@@ -1035,23 +1055,29 @@ local function setDisplayTextValue(store, color, ballType, count)
     if byColor == nil then
         return
     end
-    local obj = byColor[ballType]
-    if obj == nil or obj.isDestroyed() then
-        return
-    end
-    obj.TextTool.setValue(tostring(count))
-end
-
-local function formatVpDisplay(count)
-    return tostring(count)
+    setTextToolValue(byColor[ballType], count)
 end
 
 local function setVpDisplayTextValue(color, count)
-    local obj = vpTexts[color]
-    if obj == nil or obj.isDestroyed() then
-        return
+    setTextToolValue(vpTexts[color], count)
+end
+
+local function countOrZero(map, color, key)
+    local byColor = map[color]
+    if byColor == nil then
+        return 0
     end
-    obj.TextTool.setValue(formatVpDisplay(count))
+    return byColor[key] or 0
+end
+
+-- Returns clamped value; warns if delta would go negative.
+local function applyClampedDelta(current, delta, warning)
+    local nextCount = current + delta
+    if nextCount < 0 then
+        printToAll(warning, WARN_ORANGE)
+        return 0
+    end
+    return nextCount
 end
 
 local function applyBallDelta(color, object, sign)
@@ -1063,38 +1089,25 @@ local function applyBallDelta(color, object, sign)
         playerBalls[color] = emptyBallCounts()
     end
     local counts = playerBalls[color]
-    local nextCount = counts[ballType] + sign
-    if nextCount < 0 then
-        printToAll(
-            "Warning: " .. color .. " " .. ballType .. " count would go negative; clamped to 0.",
-            {1, 0.6, 0}
-        )
-        counts[ballType] = 0
-        setDisplayTextValue(resourceTexts, color, ballType, 0)
-        return
-    end
+    local nextCount = applyClampedDelta(
+        counts[ballType],
+        sign,
+        "Warning: " .. color .. " " .. ballType .. " count would go negative; clamped to 0."
+    )
     counts[ballType] = nextCount
     setDisplayTextValue(resourceTexts, color, ballType, nextCount)
 end
 
 local function initPlayerBallsFromZones()
-    buildBallsZoneIndex()
     playerBalls = {}
-
     for color, zones in pairs(CONFIG.PLAYER_ZONES) do
         local counts = emptyBallCounts()
-        local guid = zones.balls
-        if guid ~= nil and guid ~= "" then
-            local zone = getObjectFromGUID(guid)
-            if zone ~= nil then
-                for _, obj in ipairs(zone.getObjects()) do
-                    local ballType = ballTypeOf(obj)
-                    if ballType ~= nil then
-                        counts[ballType] = counts[ballType] + 1
-                    end
-                end
+        forEachZoneObject(zones.balls, function(obj)
+            local ballType = ballTypeOf(obj)
+            if ballType ~= nil then
+                counts[ballType] = counts[ballType] + 1
             end
-        end
+        end)
         playerBalls[color] = counts
     end
 end
@@ -1129,33 +1142,23 @@ local function applyCardDelta(color, object, sign)
 
     local discounts = playerDiscounts[color]
     for ballType, amount in pairs(entry.discount) do
-        local nextCount = discounts[ballType] + sign * amount
-        if nextCount < 0 then
-            printToAll(
-                "Warning: " .. color .. " " .. ballType
-                    .. " discount would go negative; clamped to 0.",
-                {1, 0.6, 0}
-            )
-            discounts[ballType] = 0
-            setDisplayTextValue(discountTexts, color, ballType, 0)
-        else
-            discounts[ballType] = nextCount
-            setDisplayTextValue(discountTexts, color, ballType, -nextCount)
-        end
+        local nextCount = applyClampedDelta(
+            discounts[ballType],
+            sign * amount,
+            "Warning: " .. color .. " " .. ballType
+                .. " discount would go negative; clamped to 0."
+        )
+        discounts[ballType] = nextCount
+        setDisplayTextValue(discountTexts, color, ballType, -nextCount)
     end
 
-    local nextVp = playerVp[color] + sign * (entry.vp or 0)
-    if nextVp < 0 then
-        printToAll(
-            "Warning: " .. color .. " VP would go negative; clamped to 0.",
-            {1, 0.6, 0}
-        )
-        playerVp[color] = 0
-        setVpDisplayTextValue(color, 0)
-    else
-        playerVp[color] = nextVp
-        setVpDisplayTextValue(color, nextVp)
-    end
+    local nextVp = applyClampedDelta(
+        playerVp[color],
+        sign * (entry.vp or 0),
+        "Warning: " .. color .. " VP would go negative; clamped to 0."
+    )
+    playerVp[color] = nextVp
+    setVpDisplayTextValue(color, nextVp)
 
     if sign > 0 then
         table.insert(playerCards[color], id)
@@ -1165,24 +1168,17 @@ local function applyCardDelta(color, object, sign)
 end
 
 local function initPlayerCardsFromZones()
-    buildCardsZoneIndex()
     playerDiscounts = {}
     playerVp = {}
     playerCards = {}
 
     for color, zones in pairs(CONFIG.PLAYER_ZONES) do
         ensurePlayerCardState(color)
-        local cardGuids = zones.cards
-        if cardGuids ~= nil then
-            for _, guid in ipairs(cardGuids) do
-                if guid ~= nil and guid ~= "" then
-                    local zone = getObjectFromGUID(guid)
-                    if zone ~= nil then
-                        for _, obj in ipairs(zone.getObjects()) do
-                            applyCardDelta(color, obj, 1)
-                        end
-                    end
-                end
+        if zones.cards ~= nil then
+            for _, guid in ipairs(zones.cards) do
+                forEachZoneObject(guid, function(obj)
+                    applyCardDelta(color, obj, 1)
+                end)
             end
         end
     end
@@ -1204,72 +1200,64 @@ local function addRotations(a, b)
     }
 end
 
-local function spawnDisplayTexts(cfg, tag, store, valueFor)
-    local rotOff = cfg.rotationOffset or {0, 0, 0}
-
-    for color, matGuid in pairs(CONFIG.STATS_MATS) do
-        if matGuid ~= nil and matGuid ~= "" then
-            local mat = getObjectFromGUID(matGuid)
-            if mat ~= nil then
-                store[color] = {}
-                local worldRot = addRotations(mat.getRotation(), rotOff)
-                for ballType, offset in pairs(cfg.offsets) do
-                    local colorKey = color
-                    local ballKey = ballType
-                    spawnObject({
-                        type              = "3DText",
-                        position          = mat.positionToWorld(offset),
-                        rotation          = worldRot,
-                        sound             = false,
-                        callback_function = function(obj)
-                            if obj == nil or obj.isDestroyed() then
-                                return
-                            end
-                            obj.TextTool.setValue(tostring(valueFor(colorKey, ballKey)))
-                            obj.TextTool.setFontSize(cfg.fontSize)
-                            obj.TextTool.setFontColor(cfg.fontColor)
-                            obj.addTag(tag)
-                            obj.setLock(true)
-                            obj.interactable = false
-                            if store[colorKey] == nil then
-                                store[colorKey] = {}
-                            end
-                            store[colorKey][ballKey] = obj
-                        end
-                    })
-                end
-            end
-        end
-    end
+local function configureStatsText(obj, cfg, tag, value)
+    obj.TextTool.setValue(tostring(value))
+    obj.TextTool.setFontSize(cfg.fontSize)
+    obj.TextTool.setFontColor(cfg.fontColor)
+    obj.addTag(tag)
+    obj.setLock(true)
+    obj.interactable = false
 end
 
-local function spawnVpTexts()
-    local cfg = CONFIG.VP_DISPLAY
+local function spawnLockedText(mat, worldRot, offset, cfg, tag, value, onReady)
+    spawnObject({
+        type              = "3DText",
+        position          = mat.positionToWorld(offset),
+        rotation          = worldRot,
+        sound             = false,
+        callback_function = function(obj)
+            if obj == nil or obj.isDestroyed() then
+                return
+            end
+            configureStatsText(obj, cfg, tag, value)
+            onReady(obj)
+        end
+    })
+end
+
+-- cfg.offsets -> store[color][key] = text; cfg.offset -> store[color] = text
+local function spawnDisplayTexts(cfg, tag, store, valueFor)
     local rotOff = cfg.rotationOffset or {0, 0, 0}
+    local single = cfg.offset ~= nil
 
     for color, matGuid in pairs(CONFIG.STATS_MATS) do
-        if matGuid ~= nil and matGuid ~= "" then
+        if hasGuid(matGuid) then
             local mat = getObjectFromGUID(matGuid)
             if mat ~= nil then
+                local worldRot = addRotations(mat.getRotation(), rotOff)
                 local colorKey = color
-                spawnObject({
-                    type              = "3DText",
-                    position          = mat.positionToWorld(cfg.offset),
-                    rotation          = addRotations(mat.getRotation(), rotOff),
-                    sound             = false,
-                    callback_function = function(obj)
-                        if obj == nil or obj.isDestroyed() then
-                            return
+                if single then
+                    spawnLockedText(
+                        mat, worldRot, cfg.offset, cfg, tag, valueFor(colorKey),
+                        function(obj)
+                            store[colorKey] = obj
                         end
-                        obj.TextTool.setValue(formatVpDisplay(playerVp[colorKey] or 0))
-                        obj.TextTool.setFontSize(cfg.fontSize)
-                        obj.TextTool.setFontColor(cfg.fontColor)
-                        obj.addTag(VP_TEXT_TAG)
-                        obj.setLock(true)
-                        obj.interactable = false
-                        vpTexts[colorKey] = obj
+                    )
+                else
+                    store[color] = {}
+                    for key, offset in pairs(cfg.offsets) do
+                        local ballKey = key
+                        spawnLockedText(
+                            mat, worldRot, offset, cfg, tag, valueFor(colorKey, ballKey),
+                            function(obj)
+                                if store[colorKey] == nil then
+                                    store[colorKey] = {}
+                                end
+                                store[colorKey][ballKey] = obj
+                            end
+                        )
                     end
-                })
+                end
             end
         end
     end
@@ -1284,50 +1272,55 @@ local function spawnStatsTexts()
     vpTexts = {}
 
     spawnDisplayTexts(CONFIG.DISCOUNT_DISPLAY, DISCOUNT_TEXT_TAG, discountTexts, function(color, ballType)
-        if playerDiscounts[color] == nil then
-            return 0
-        end
-        return -(playerDiscounts[color][ballType] or 0)
+        return -countOrZero(playerDiscounts, color, ballType)
     end)
     spawnDisplayTexts(CONFIG.RESOURCE_DISPLAY, RESOURCE_TEXT_TAG, resourceTexts, function(color, ballType)
-        if playerBalls[color] == nil then
-            return 0
-        end
-        return playerBalls[color][ballType] or 0
+        return countOrZero(playerBalls, color, ballType)
     end)
-    spawnVpTexts()
+    spawnDisplayTexts(CONFIG.VP_DISPLAY, VP_TEXT_TAG, vpTexts, function(color)
+        return playerVp[color] or 0
+    end)
+end
+
+function clearPlayerStats()
+    for color, _ in pairs(CONFIG.PLAYER_ZONES) do
+        playerBalls[color] = emptyBallCounts()
+        playerDiscounts[color] = emptyBallCounts()
+        playerVp[color] = 0
+        playerCards[color] = {}
+        for ballType, _ in pairs(BALL_TYPES) do
+            setDisplayTextValue(resourceTexts, color, ballType, 0)
+            setDisplayTextValue(discountTexts, color, ballType, 0)
+        end
+        setVpDisplayTextValue(color, 0)
+    end
+end
+
+local function handleZoneObject(zone, object, sign)
+    if not gameInitialized then
+        return
+    end
+    if zone == nil or object == nil then
+        return
+    end
+    local guid = zone.getGUID()
+    local ballColor = ballsZoneGuidToColor[guid]
+    if ballColor ~= nil then
+        applyBallDelta(ballColor, object, sign)
+        return
+    end
+    local cardColor = cardsZoneGuidToColor[guid]
+    if cardColor ~= nil then
+        applyCardDelta(cardColor, object, sign)
+    end
 end
 
 function onObjectEnterZone(zone, object)
-    if zone == nil or object == nil then
-        return
-    end
-    local guid = zone.getGUID()
-    local ballColor = ballsZoneGuidToColor[guid]
-    if ballColor ~= nil then
-        applyBallDelta(ballColor, object, 1)
-        return
-    end
-    local cardColor = cardsZoneGuidToColor[guid]
-    if cardColor ~= nil then
-        applyCardDelta(cardColor, object, 1)
-    end
+    handleZoneObject(zone, object, 1)
 end
 
 function onObjectLeaveZone(zone, object)
-    if zone == nil or object == nil then
-        return
-    end
-    local guid = zone.getGUID()
-    local ballColor = ballsZoneGuidToColor[guid]
-    if ballColor ~= nil then
-        applyBallDelta(ballColor, object, -1)
-        return
-    end
-    local cardColor = cardsZoneGuidToColor[guid]
-    if cardColor ~= nil then
-        applyCardDelta(cardColor, object, -1)
-    end
+    handleZoneObject(zone, object, -1)
 end
 
 local function getTokenUiAssets()
@@ -1360,6 +1353,7 @@ function onLoad()
         entry.vp = getVp(parts)
     end
     registerTokenUiAssets()
+    buildPlayerZoneIndexes()
     initPlayerBallsFromZones()
     initPlayerCardsFromZones()
     spawnStatsTexts()
