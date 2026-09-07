@@ -678,14 +678,12 @@ CARD_DATABASE = {
     }
 }
 
+local STAGE_TIERS = {stage1 = true, stage2 = true, stage3 = true}
+local NON_STAGE_TIERS = {rare = true, legendary = true}
 
 function getDiscount(parts)
     local discount_type = parts[1]
-    local amount = 1
-    local tier = parts[2]
-    if tier == "rare" or tier == "legendary" then
-        amount = 2
-    end
+    local amount = STAGE_TIERS[parts[2]] and 1 or 2
     return { [discount_type] = amount }
 end
 
@@ -715,8 +713,6 @@ end
 -- ============================================================================
 
 local SLOT_COUNT = 4
-local ROW_TIERS = {"stage1", "stage2", "stage3"}
-local PILE_TIERS = {"rare", "legendary"}
 local RAY_ORIGIN_Y_OFFSET = 2
 local RAY_MAX_DISTANCE = 5
 
@@ -807,18 +803,26 @@ local function getPileRevealPosition(tier)
     }
 end
 
+local function firstTag(object)
+    local tags = object.getTags()
+    if tags == nil then
+        return nil
+    end
+    return tags[1]
+end
+
 local function findRowSlot(object)
     if object == nil or object.isDestroyed() then
         return nil
     end
-    for _, tier in ipairs(ROW_TIERS) do
-        if object.hasTag(tier) then
-            for i = 0, SLOT_COUNT - 1 do
-                local slotPos = getSlotPosition(tier, i)
-                if objectAt(slotPos, object) then
-                    return { kind = "row", tier = tier, slotIndex = i, position = slotPos }
-                end
-            end
+    local tier = firstTag(object)
+    if not STAGE_TIERS[tier] then
+        return nil
+    end
+    for i = 0, SLOT_COUNT - 1 do
+        local slotPos = getSlotPosition(tier, i)
+        if objectAt(slotPos, object) then
+            return { kind = "row", tier = tier, slotIndex = i, position = slotPos }
         end
     end
     return nil
@@ -831,13 +835,13 @@ local function findPileFaceUp(object)
     if object.is_face_down then
         return nil
     end
-    for _, tier in ipairs(PILE_TIERS) do
-        if object.hasTag(tier) then
-            local pilePos = getPileRevealPosition(tier)
-            if objectAt(pilePos, object) then
-                return { kind = "pile", tier = tier, position = pilePos }
-            end
-        end
+    local tier = firstTag(object)
+    if not NON_STAGE_TIERS[tier] then
+        return nil
+    end
+    local pilePos = getPileRevealPosition(tier)
+    if objectAt(pilePos, object) then
+        return { kind = "pile", tier = tier, position = pilePos }
     end
     return nil
 end
@@ -1005,11 +1009,7 @@ local function ballTypeOf(object)
     if object == nil or object.isDestroyed() then
         return nil
     end
-    local tags = object.getTags()
-    if tags == nil then
-        return nil
-    end
-    local tag = tags[1]
+    local tag = firstTag(object)
     if tag ~= nil and BALL_TYPES[tag] then
         return tag
     end
