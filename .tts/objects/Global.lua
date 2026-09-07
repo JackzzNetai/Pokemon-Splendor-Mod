@@ -811,12 +811,26 @@ local function firstTag(object)
     return tags[1]
 end
 
+-- True if pos.x/z is inside zone {xMin,xMax,zMin,zMax}.
+-- Also accepts {pos=, zone=} so object scripts can Global.call this.
+function inXZZone(pos, zone)
+    if zone == nil then
+        zone = pos.zone
+        pos = pos.pos
+    end
+    return pos.x >= zone.xMin and pos.x <= zone.xMax
+       and pos.z >= zone.zMin and pos.z <= zone.zMax
+end
+
 local function findRowSlot(object)
     if object == nil or object.isDestroyed() then
         return nil
     end
     local tier = firstTag(object)
     if not STAGE_TIERS[tier] then
+        return nil
+    end
+    if not inXZZone(object.getPosition(), CONFIG.MARKET_ZONE) then
         return nil
     end
     for i = 0, SLOT_COUNT - 1 do
@@ -837,6 +851,9 @@ local function findPileFaceUp(object)
     end
     local tier = firstTag(object)
     if not NON_STAGE_TIERS[tier] then
+        return nil
+    end
+    if not inXZZone(object.getPosition(), CONFIG.MARKET_ZONE) then
         return nil
     end
     local pilePos = getPileRevealPosition(tier)

@@ -57,9 +57,7 @@ function findReadyDeck(tag, zone, expected, allowExtra)
     for _, obj in ipairs(getObjectsWithTag(tag)) do
         if obj.type == "Deck" and not obj.isDestroyed() then
             local pos = obj.getPosition()
-            local inExcludeZone = (pos.x >= zone.xMin and pos.x <= zone.xMax and
-                                   pos.z >= zone.zMin and pos.z <= zone.zMax)
-            if not inExcludeZone then
+            if not Global.call("inXZZone", { pos = pos, zone = zone }) then
                 local quantity = obj.getQuantity()
                 if allowExtra then
                     if quantity >= expected then
@@ -85,10 +83,7 @@ function SetupDeck(deckKey, dealCount, isRowDeal, config)
     -- 1. Gather all cards OUTSIDE the exclude zone
     for _, obj in ipairs(getObjectsWithTag(tag)) do
         local pos = obj.getPosition()
-        local inExcludeZone = (pos.x >= zone.xMin and pos.x <= zone.xMax and
-                               pos.z >= zone.zMin and pos.z <= zone.zMax)
-
-        if not inExcludeZone then
+        if not Global.call("inXZZone", { pos = pos, zone = zone }) then
             table.insert(cardList, obj)
         end
     end
