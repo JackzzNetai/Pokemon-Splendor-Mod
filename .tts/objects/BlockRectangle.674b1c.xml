@@ -1,8 +1,8 @@
 <Panel id="root" width="100" height="100" position="0 0 -51">
-    <Image id="masterball_icon" image="masterball" width="8" height="39.74" offsetXY="-30.548 27" />
     <Image id="pokeball_icon" image="pokeball" width="8" height="39.74" offsetXY="-16.004 27" />
     <Image id="greatball_icon" image="greatball" width="8" height="39.74" offsetXY="-1.459 27" />
     <Image id="ultraball_icon" image="ultraball" width="8" height="39.74" offsetXY="13.085 27" />
     <Image id="healball_icon" image="healball" width="8" height="39.74" offsetXY="27.630 27" />
     <Image id="quickball_icon" image="quickball" width="8" height="39.74" offsetXY="42.174 27" />
+    <Image id="masterball_icon" image="masterball" width="8" height="39.74" offsetXY="-30.548 27" />
 </Panel>
