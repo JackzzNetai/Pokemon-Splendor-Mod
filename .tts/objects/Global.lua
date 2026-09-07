@@ -5,7 +5,29 @@
 local CONSTANTS = {
     DECK_Y  = 1.692,
     TOKEN_Y = 2.29,
-    TOKEN_Z = -5.81
+    TOKEN_Z = -5.81,
+    STATS_ICON_OFFSET_Y = 27,
+    STATS_TEXT_FONT_COLOR = {1, 1, 1},
+    STATS_TEXT_FONT_SIZE = {
+        DISCOUNT = 60,
+        COST_RESOURCE = 90,
+        VP = 100
+    },
+    STATS_TEXT_ROTATION_OFFSET = {90, 0, 0},
+    STATS_TEXT_X = {
+        pokeball   = -0.16004,
+        greatball  = -0.01459,
+        ultraball  = 0.13085,
+        healball   = 0.27630,
+        quickball  = 0.42174,
+        masterball = -0.30548
+    },
+    STATS_TEXT_COST_RESOURCE_X_DELTA = 0.035,
+    STATS_TEXT_Y = 0.51,
+    STATS_TEXT_Z = {
+        DISCOUNT = 0.05,
+        COST_RESOURCE = -0.15
+    }
 }
 
 CONFIG = {
@@ -107,37 +129,65 @@ CONFIG = {
     },
 
     DISCOUNT_DISPLAY = {
-        fontSize  = 60,
-        fontColor = {1, 1, 1},
-        rotationOffset = {90, 0, 0},
+        fontSize  = CONSTANTS.STATS_TEXT_FONT_SIZE.DISCOUNT,
+        fontColor = CONSTANTS.STATS_TEXT_FONT_COLOR,
+        rotationOffset = CONSTANTS.STATS_TEXT_ROTATION_OFFSET,
         offsets = {
-            pokeball   = {-0.16004, 0.51, 0.05},
-            greatball  = {-0.01459, 0.51, 0.05},
-            ultraball  = {0.13085, 0.51, 0.05},
-            healball   = {0.27630, 0.51, 0.05},
-            quickball  = {0.42174, 0.51, 0.05}
+            pokeball   = {CONSTANTS.STATS_TEXT_X.pokeball, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.DISCOUNT},
+            greatball  = {CONSTANTS.STATS_TEXT_X.greatball, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.DISCOUNT},
+            ultraball  = {CONSTANTS.STATS_TEXT_X.ultraball, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.DISCOUNT},
+            healball   = {CONSTANTS.STATS_TEXT_X.healball, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.DISCOUNT},
+            quickball  = {CONSTANTS.STATS_TEXT_X.quickball, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.DISCOUNT}
+        }
+    },
+
+    COST_DISPLAY = {
+        fontSize  = CONSTANTS.STATS_TEXT_FONT_SIZE.COST_RESOURCE,
+        fontColor = CONSTANTS.STATS_TEXT_FONT_COLOR,
+        rotationOffset = CONSTANTS.STATS_TEXT_ROTATION_OFFSET,
+        offsets = {
+            pokeball   = {CONSTANTS.STATS_TEXT_X.pokeball - CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
+            greatball  = {CONSTANTS.STATS_TEXT_X.greatball - CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
+            ultraball  = {CONSTANTS.STATS_TEXT_X.ultraball - CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
+            healball   = {CONSTANTS.STATS_TEXT_X.healball - CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
+            quickball  = {CONSTANTS.STATS_TEXT_X.quickball - CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
+            masterball = {CONSTANTS.STATS_TEXT_X.masterball - CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE}
         }
     },
 
     RESOURCE_DISPLAY = {
-        fontSize  = 90,
-        fontColor = {1, 1, 1},
-        rotationOffset = {90, 0, 0},
+        fontSize  = CONSTANTS.STATS_TEXT_FONT_SIZE.COST_RESOURCE,
+        fontColor = CONSTANTS.STATS_TEXT_FONT_COLOR,
+        rotationOffset = CONSTANTS.STATS_TEXT_ROTATION_OFFSET,
         offsets = {
-            pokeball   = {-0.16004, 0.51, -0.15},
-            greatball  = {-0.01459, 0.51, -0.15},
-            ultraball  = {0.13085, 0.51, -0.15},
-            healball   = {0.27630, 0.51, -0.15},
-            quickball  = {0.42174, 0.51, -0.15},
-            masterball = {-0.30548, 0.51, -0.15}
+            pokeball   = {CONSTANTS.STATS_TEXT_X.pokeball + CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
+            greatball  = {CONSTANTS.STATS_TEXT_X.greatball + CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
+            ultraball  = {CONSTANTS.STATS_TEXT_X.ultraball + CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
+            healball   = {CONSTANTS.STATS_TEXT_X.healball + CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
+            quickball  = {CONSTANTS.STATS_TEXT_X.quickball + CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
+            masterball = {CONSTANTS.STATS_TEXT_X.masterball + CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE}
+        }
+    },
+
+    SLASH_DISPLAY = {
+        fontSize  = CONSTANTS.STATS_TEXT_FONT_SIZE.COST_RESOURCE,
+        fontColor = CONSTANTS.STATS_TEXT_FONT_COLOR,
+        rotationOffset = CONSTANTS.STATS_TEXT_ROTATION_OFFSET,
+        offsets = {
+            pokeball   = {CONSTANTS.STATS_TEXT_X.pokeball, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
+            greatball  = {CONSTANTS.STATS_TEXT_X.greatball, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
+            ultraball  = {CONSTANTS.STATS_TEXT_X.ultraball, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
+            healball   = {CONSTANTS.STATS_TEXT_X.healball, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
+            quickball  = {CONSTANTS.STATS_TEXT_X.quickball, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
+            masterball = {CONSTANTS.STATS_TEXT_X.masterball, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE}
         }
     },
 
     VP_DISPLAY = {
-        fontSize  = 100,
-        fontColor = {1, 1, 1},
-        rotationOffset = {90, 0, 0},
-        offset = {-0.42, 0.51, 0.43}
+        fontSize  = CONSTANTS.STATS_TEXT_FONT_SIZE.VP,
+        fontColor = CONSTANTS.STATS_TEXT_FONT_COLOR,
+        rotationOffset = CONSTANTS.STATS_TEXT_ROTATION_OFFSET,
+        offset = {-0.42, CONSTANTS.STATS_TEXT_Y, 0.43}
     }
 }
 
@@ -959,10 +1009,14 @@ playerCards = {}
 local ballsZoneGuidToColor = {}
 local cardsZoneGuidToColor = {}
 local discountTexts = {}
+local costTexts = {}
 local resourceTexts = {}
+local slashTexts = {}
 local vpTexts = {}
 local DISCOUNT_TEXT_TAG = "stats_discount_text"
+local COST_TEXT_TAG = "stats_cost_text"
 local RESOURCE_TEXT_TAG = "stats_resource_text"
+local SLASH_TEXT_TAG = "stats_slash_text"
 local VP_TEXT_TAG = "stats_vp_text"
 
 local function emptyBallCounts()
@@ -1265,17 +1319,27 @@ end
 
 local function spawnStatsTexts()
     clearTaggedTexts(DISCOUNT_TEXT_TAG)
+    clearTaggedTexts(COST_TEXT_TAG)
     clearTaggedTexts(RESOURCE_TEXT_TAG)
+    clearTaggedTexts(SLASH_TEXT_TAG)
     clearTaggedTexts(VP_TEXT_TAG)
     discountTexts = {}
+    costTexts = {}
     resourceTexts = {}
+    slashTexts = {}
     vpTexts = {}
 
     spawnDisplayTexts(CONFIG.DISCOUNT_DISPLAY, DISCOUNT_TEXT_TAG, discountTexts, function(color, ballType)
         return -countOrZero(playerDiscounts, color, ballType)
     end)
+    spawnDisplayTexts(CONFIG.COST_DISPLAY, COST_TEXT_TAG, costTexts, function()
+        return 0
+    end)
     spawnDisplayTexts(CONFIG.RESOURCE_DISPLAY, RESOURCE_TEXT_TAG, resourceTexts, function(color, ballType)
         return countOrZero(playerBalls, color, ballType)
+    end)
+    spawnDisplayTexts(CONFIG.SLASH_DISPLAY, SLASH_TEXT_TAG, slashTexts, function()
+        return "/"
     end)
     spawnDisplayTexts(CONFIG.VP_DISPLAY, VP_TEXT_TAG, vpTexts, function(color)
         return playerVp[color] or 0
@@ -1290,6 +1354,7 @@ function clearPlayerStats()
         playerCards[color] = {}
         for ballType, _ in pairs(BALL_TYPES) do
             setDisplayTextValue(resourceTexts, color, ballType, 0)
+            setDisplayTextValue(costTexts, color, ballType, 0)
             setDisplayTextValue(discountTexts, color, ballType, 0)
         end
         setVpDisplayTextValue(color, 0)
@@ -1343,6 +1408,24 @@ local function registerTokenUiAssets()
     end
 end
 
+local function applyStatsMatIconOffsets()
+    local y = CONSTANTS.STATS_ICON_OFFSET_Y
+    for _, matGuid in pairs(CONFIG.STATS_MATS) do
+        if hasGuid(matGuid) then
+            local mat = getObjectFromGUID(matGuid)
+            if mat ~= nil then
+                for ballType, x in pairs(CONSTANTS.STATS_TEXT_X) do
+                    mat.UI.setAttribute(
+                        ballType .. "_icon",
+                        "offsetXY",
+                        string.format("%.3f %s", x * 100, tostring(y))
+                    )
+                end
+            end
+        end
+    end
+end
+
 function onLoad()
     for card_id, entry in pairs(CARD_DATABASE) do
         local parts = {}
@@ -1353,6 +1436,7 @@ function onLoad()
         entry.vp = getVp(parts)
     end
     registerTokenUiAssets()
+    applyStatsMatIconOffsets()
     buildPlayerZoneIndexes()
     initPlayerBallsFromZones()
     initPlayerCardsFromZones()
