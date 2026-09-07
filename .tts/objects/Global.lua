@@ -15,12 +15,12 @@ CONFIG = {
         stage3     = "stage3",
         rare       = "rare",
         legendary  = "legendary",
-        masterball = "masterball",
-        quickball  = "quickball",
-        healball   = "healball",
-        ultraball  = "ultraball",
+        pokeball   = "pokeball",
         greatball  = "greatball",
-        pokeball   = "pokeball"
+        ultraball  = "ultraball",
+        healball   = "healball",
+        quickball  = "quickball",
+        masterball = "masterball"
     },
 
     DECK_POSITIONS = {
@@ -47,21 +47,30 @@ CONFIG = {
     },
     
     TOKEN_POSITIONS = {
-        masterball = {8.62,  CONSTANTS.TOKEN_Y, CONSTANTS.TOKEN_Z},
-        quickball  = {4.25,  CONSTANTS.TOKEN_Y, CONSTANTS.TOKEN_Z},
-        healball   = {1.05,  CONSTANTS.TOKEN_Y, CONSTANTS.TOKEN_Z},
-        ultraball  = {-2.15, CONSTANTS.TOKEN_Y, CONSTANTS.TOKEN_Z},
+        pokeball   = {-8.55, CONSTANTS.TOKEN_Y, CONSTANTS.TOKEN_Z},
         greatball  = {-5.35, CONSTANTS.TOKEN_Y, CONSTANTS.TOKEN_Z},
-        pokeball   = {-8.55, CONSTANTS.TOKEN_Y, CONSTANTS.TOKEN_Z}
+        ultraball  = {-2.15, CONSTANTS.TOKEN_Y, CONSTANTS.TOKEN_Z},
+        healball   = {1.05,  CONSTANTS.TOKEN_Y, CONSTANTS.TOKEN_Z},
+        quickball  = {4.25,  CONSTANTS.TOKEN_Y, CONSTANTS.TOKEN_Z},
+        masterball = {8.62,  CONSTANTS.TOKEN_Y, CONSTANTS.TOKEN_Z}
     },
 
     TOKEN_URLS = {
-        masterball = "https://steamusercontent-a.akamaihd.net/ugc/2323362210747791835/9EFE78E35647914052CC8B910E9BB9FE863E851F/",
-        quickball  = "https://steamusercontent-a.akamaihd.net/ugc/2323362210747771209/96EF37E96F383B860E5F3C6F6E35B9474AD13C22/",
-        healball   = "https://steamusercontent-a.akamaihd.net/ugc/2323362210747739226/BA6678C3E7A0627E90E5CEC977143EA5E35C2E18/",
-        ultraball  = "https://steamusercontent-a.akamaihd.net/ugc/2323362210747710332/FE96ADE7D02539570DC79CE61314DAD0595610FB/",
+        pokeball   = "https://steamusercontent-a.akamaihd.net/ugc/2323362210747487116/6ABDC58B0C26DB01261D924D8D5342E984E248F3/",
         greatball  = "https://steamusercontent-a.akamaihd.net/ugc/2323362210747689168/B775EA9F88ECA17ADDD0874E27B12F50B755CA2E/",
-        pokeball   = "https://steamusercontent-a.akamaihd.net/ugc/2323362210747487116/6ABDC58B0C26DB01261D924D8D5342E984E248F3/"
+        ultraball  = "https://steamusercontent-a.akamaihd.net/ugc/2323362210747710332/FE96ADE7D02539570DC79CE61314DAD0595610FB/",
+        healball   = "https://steamusercontent-a.akamaihd.net/ugc/2323362210747739226/BA6678C3E7A0627E90E5CEC977143EA5E35C2E18/",
+        quickball  = "https://steamusercontent-a.akamaihd.net/ugc/2323362210747771209/96EF37E96F383B860E5F3C6F6E35B9474AD13C22/",
+        masterball = "https://steamusercontent-a.akamaihd.net/ugc/2323362210747791835/9EFE78E35647914052CC8B910E9BB9FE863E851F/"
+    },
+
+    SPRITE_URLS = {
+        pokeball   = "https://steamusercontent-a.akamaihd.net/ugc/14709198635150254395/76550AD8A092D6BAE143F1E18E1E56C17411E555/",
+        greatball  = "https://steamusercontent-a.akamaihd.net/ugc/13650033029954106742/93B32286CF47427B25FEB5E89F64A5125B07DA39/",
+        ultraball  = "https://steamusercontent-a.akamaihd.net/ugc/13344432982333503541/D68F78909F91DCC0FFAC40655FED2F647D687263/",
+        healball   = "https://steamusercontent-a.akamaihd.net/ugc/11552130010477945832/45659CD84BFDE0A5364C2847FF46D2F7EEB066E8/",
+        quickball  = "https://steamusercontent-a.akamaihd.net/ugc/15889652890499942729/F5CE1600119C55E03F681988E0A3F24930993F09/",
+        masterball = "https://steamusercontent-a.akamaihd.net/ugc/14594657176534589402/580242A96F317EC13984541BEA50FB7DB2540B8A/"
     },
     
     EXCLUDE_ZONE = {
@@ -999,6 +1008,26 @@ function onObjectLeaveZone(zone, object)
     applyBallDelta(color, object, -1)
 end
 
+local function getTokenUiAssets()
+    local assets = {}
+    for name, url in pairs(CONFIG.SPRITE_URLS) do
+        table.insert(assets, { name = name, url = url })
+    end
+    return assets
+end
+
+local function registerTokenUiAssets()
+    local assets = getTokenUiAssets()
+    UI.setCustomAssets(assets)
+    -- Object UI has its own asset list; reuse the same sprites on every mat.
+    for _, obj in ipairs(getObjects()) do
+        local xml = obj.UI.getXml()
+        if xml ~= nil and xml ~= "" then
+            obj.UI.setCustomAssets(assets)
+        end
+    end
+end
+
 function onLoad()
     for card_id, entry in pairs(CARD_DATABASE) do
         local parts = {}
@@ -1008,6 +1037,7 @@ function onLoad()
         entry.discount = getDiscount(parts)
         entry.vp = getVp(parts)
     end
+    registerTokenUiAssets()
     initPlayerBallsFromZones()
 end
 
