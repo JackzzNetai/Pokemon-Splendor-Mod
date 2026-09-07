@@ -128,66 +128,29 @@ CONFIG = {
         Pink   = ""
     },
 
+    -- offsets are built in spawnDisplayTexts from STATS_TEXT_X / Y / z / xDelta
     DISCOUNT_DISPLAY = {
-        fontSize  = CONSTANTS.STATS_TEXT_FONT_SIZE.DISCOUNT,
-        fontColor = CONSTANTS.STATS_TEXT_FONT_COLOR,
-        rotationOffset = CONSTANTS.STATS_TEXT_ROTATION_OFFSET,
-        offsets = {
-            pokeball   = {CONSTANTS.STATS_TEXT_X.pokeball, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.DISCOUNT},
-            greatball  = {CONSTANTS.STATS_TEXT_X.greatball, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.DISCOUNT},
-            ultraball  = {CONSTANTS.STATS_TEXT_X.ultraball, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.DISCOUNT},
-            healball   = {CONSTANTS.STATS_TEXT_X.healball, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.DISCOUNT},
-            quickball  = {CONSTANTS.STATS_TEXT_X.quickball, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.DISCOUNT}
-        }
+        fontSize = CONSTANTS.STATS_TEXT_FONT_SIZE.DISCOUNT,
+        z = CONSTANTS.STATS_TEXT_Z.DISCOUNT,
+        includeMasterball = false
     },
-
     COST_DISPLAY = {
-        fontSize  = CONSTANTS.STATS_TEXT_FONT_SIZE.COST_RESOURCE,
-        fontColor = CONSTANTS.STATS_TEXT_FONT_COLOR,
-        rotationOffset = CONSTANTS.STATS_TEXT_ROTATION_OFFSET,
-        offsets = {
-            pokeball   = {CONSTANTS.STATS_TEXT_X.pokeball - CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
-            greatball  = {CONSTANTS.STATS_TEXT_X.greatball - CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
-            ultraball  = {CONSTANTS.STATS_TEXT_X.ultraball - CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
-            healball   = {CONSTANTS.STATS_TEXT_X.healball - CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
-            quickball  = {CONSTANTS.STATS_TEXT_X.quickball - CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
-            masterball = {CONSTANTS.STATS_TEXT_X.masterball - CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE}
-        }
+        fontSize = CONSTANTS.STATS_TEXT_FONT_SIZE.COST_RESOURCE,
+        z = CONSTANTS.STATS_TEXT_Z.COST_RESOURCE,
+        xDelta = -CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA
     },
-
     RESOURCE_DISPLAY = {
-        fontSize  = CONSTANTS.STATS_TEXT_FONT_SIZE.COST_RESOURCE,
-        fontColor = CONSTANTS.STATS_TEXT_FONT_COLOR,
-        rotationOffset = CONSTANTS.STATS_TEXT_ROTATION_OFFSET,
-        offsets = {
-            pokeball   = {CONSTANTS.STATS_TEXT_X.pokeball + CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
-            greatball  = {CONSTANTS.STATS_TEXT_X.greatball + CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
-            ultraball  = {CONSTANTS.STATS_TEXT_X.ultraball + CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
-            healball   = {CONSTANTS.STATS_TEXT_X.healball + CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
-            quickball  = {CONSTANTS.STATS_TEXT_X.quickball + CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
-            masterball = {CONSTANTS.STATS_TEXT_X.masterball + CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE}
-        }
+        fontSize = CONSTANTS.STATS_TEXT_FONT_SIZE.COST_RESOURCE,
+        z = CONSTANTS.STATS_TEXT_Z.COST_RESOURCE,
+        xDelta = CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA
     },
-
     SLASH_DISPLAY = {
-        fontSize  = CONSTANTS.STATS_TEXT_FONT_SIZE.COST_RESOURCE,
-        fontColor = CONSTANTS.STATS_TEXT_FONT_COLOR,
-        rotationOffset = CONSTANTS.STATS_TEXT_ROTATION_OFFSET,
-        offsets = {
-            pokeball   = {CONSTANTS.STATS_TEXT_X.pokeball, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
-            greatball  = {CONSTANTS.STATS_TEXT_X.greatball, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
-            ultraball  = {CONSTANTS.STATS_TEXT_X.ultraball, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
-            healball   = {CONSTANTS.STATS_TEXT_X.healball, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
-            quickball  = {CONSTANTS.STATS_TEXT_X.quickball, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE},
-            masterball = {CONSTANTS.STATS_TEXT_X.masterball, CONSTANTS.STATS_TEXT_Y, CONSTANTS.STATS_TEXT_Z.COST_RESOURCE}
-        }
+        fontSize = CONSTANTS.STATS_TEXT_FONT_SIZE.COST_RESOURCE,
+        z = CONSTANTS.STATS_TEXT_Z.COST_RESOURCE
     },
-
     VP_DISPLAY = {
-        fontSize  = CONSTANTS.STATS_TEXT_FONT_SIZE.VP,
-        fontColor = CONSTANTS.STATS_TEXT_FONT_COLOR,
-        rotationOffset = CONSTANTS.STATS_TEXT_ROTATION_OFFSET,
-        offset = {-0.42, CONSTANTS.STATS_TEXT_Y, 0.43}
+        fontSize = CONSTANTS.STATS_TEXT_FONT_SIZE.VP,
+        offset = {-0.43, CONSTANTS.STATS_TEXT_Y, 0.43}
     }
 }
 
@@ -1279,10 +1242,27 @@ local function spawnLockedText(mat, worldRot, offset, cfg, tag, value, onReady)
     })
 end
 
--- cfg.offsets -> store[color][key] = text; cfg.offset -> store[color] = text
+local function buildStatsOffsets(cfg)
+    local offsets = {}
+    local xDelta = cfg.xDelta or 0
+    local includeMasterball = cfg.includeMasterball ~= false
+    for ballType, x in pairs(CONSTANTS.STATS_TEXT_X) do
+        if includeMasterball or ballType ~= "masterball" then
+            offsets[ballType] = {x + xDelta, CONSTANTS.STATS_TEXT_Y, cfg.z}
+        end
+    end
+    return offsets
+end
+
+-- cfg.offset -> one text per mat; else one text per ball from STATS_TEXT_X
 local function spawnDisplayTexts(cfg, tag, store, valueFor)
-    local rotOff = cfg.rotationOffset or {0, 0, 0}
+    cfg.fontColor = cfg.fontColor or CONSTANTS.STATS_TEXT_FONT_COLOR
+    cfg.rotationOffset = cfg.rotationOffset or CONSTANTS.STATS_TEXT_ROTATION_OFFSET
+    local rotOff = cfg.rotationOffset
     local single = cfg.offset ~= nil
+    if not single and cfg.offsets == nil then
+        cfg.offsets = buildStatsOffsets(cfg)
+    end
 
     for color, matGuid in pairs(CONFIG.STATS_MATS) do
         if hasGuid(matGuid) then
