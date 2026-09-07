@@ -97,7 +97,30 @@ CONFIG = {
             cards = { "", "", "", "", "" },
             balls = "",
         },
-    }
+    },
+
+    STATS_MATS = {
+        Purple = "",
+        Red    = "",
+        Green  = "674b1c", -- confirm in TTS
+        Pink   = "",
+    },
+
+    -- Local to each mat (same for every seat). Tune once.
+    STATS_TEXT = {
+        fontSize  = 60,
+        fontColor = {1, 1, 1},
+        rotationOffset = {90, 0, 0},
+        -- y sits just above the bar; x/z lined up under each icon
+        offsets = {
+            pokeball   = {-0.16004, 0.51, 0.05},
+            greatball  = {-0.01459, 0.51, 0.05},
+            ultraball  = {0.13085, 0.51, 0.05},
+            healball   = {0.27630, 0.51, 0.05},
+            quickball  = {0.42174, 0.51, 0.05},
+            masterball = {-0.30548, 0.51, 0.05},
+        },
+    },
 }
 
 CARD_DATABASE = {
@@ -909,6 +932,8 @@ local BALL_TYPES = {
 
 playerBalls = {}
 local ballsZoneGuidToColor = {}
+local statsTexts = {}
+local STATS_COUNT_TAG = "stats_count_text"
 
 local function emptyBallCounts()
     local counts = {}
@@ -943,6 +968,18 @@ local function buildBallsZoneIndex()
     end
 end
 
+local function setStatsTextValue(color, ballType, count)
+    local byColor = statsTexts[color]
+    if byColor == nil then
+        return
+    end
+    local obj = byColor[ballType]
+    if obj == nil or obj.isDestroyed() then
+        return
+    end
+    obj.TextTool.setValue(tostring(count))
+end
+
 local function applyBallDelta(color, object, sign)
     local ballType = ballTypeOf(object)
     if ballType == nil then
@@ -959,9 +996,11 @@ local function applyBallDelta(color, object, sign)
             {1, 0.6, 0}
         )
         counts[ballType] = 0
+        setStatsTextValue(color, ballType, 0)
         return
     end
     counts[ballType] = nextCount
+    setStatsTextValue(color, ballType, nextCount)
 end
 
 local function initPlayerBallsFromZones()
@@ -983,6 +1022,69 @@ local function initPlayerBallsFromZones()
             end
         end
         playerBalls[color] = counts
+    end
+end
+
+local function clearStatsTexts()
+    for _, obj in ipairs(getObjectsWithTag(STATS_COUNT_TAG)) do
+        if obj ~= nil and not obj.isDestroyed() then
+            obj.destruct()
+        end
+    end
+    statsTexts = {}
+end
+
+local function addRotations(a, b)
+    return {
+        (a[1] or a.x or 0) + (b[1] or b.x or 0),
+        (a[2] or a.y or 0) + (b[2] or b.y or 0),
+        (a[3] or a.z or 0) + (b[3] or b.z or 0),
+    }
+end
+
+local function spawnStatsTexts()
+    clearStatsTexts()
+    local cfg = CONFIG.STATS_TEXT
+    local rotOff = cfg.rotationOffset or {0, 0, 0}
+
+    for color, matGuid in pairs(CONFIG.STATS_MATS) do
+        if matGuid ~= nil and matGuid ~= "" then
+            local mat = getObjectFromGUID(matGuid)
+            if mat ~= nil then
+                statsTexts[color] = {}
+                local matRot = mat.getRotation()
+                local worldRot = addRotations(matRot, rotOff)
+                for ballType, offset in pairs(cfg.offsets) do
+                    local colorKey = color
+                    local ballKey = ballType
+                    spawnObject({
+                        type              = "3DText",
+                        position          = mat.positionToWorld(offset),
+                        rotation          = worldRot,
+                        sound             = false,
+                        callback_function = function(obj)
+                            if obj == nil or obj.isDestroyed() then
+                                return
+                            end
+                            local count = 0
+                            if playerBalls[colorKey] ~= nil then
+                                count = playerBalls[colorKey][ballKey] or 0
+                            end
+                            obj.TextTool.setValue(tostring(count))
+                            obj.TextTool.setFontSize(cfg.fontSize)
+                            obj.TextTool.setFontColor(cfg.fontColor)
+                            obj.addTag(STATS_COUNT_TAG)
+                            obj.setLock(true)
+                            obj.interactable = false
+                            if statsTexts[colorKey] == nil then
+                                statsTexts[colorKey] = {}
+                            end
+                            statsTexts[colorKey][ballKey] = obj
+                        end,
+                    })
+                end
+            end
+        end
     end
 end
 
@@ -1039,6 +1141,7 @@ function onLoad()
     end
     registerTokenUiAssets()
     initPlayerBallsFromZones()
+    spawnStatsTexts()
 end
 
 
