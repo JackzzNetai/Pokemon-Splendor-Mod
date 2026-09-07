@@ -10,7 +10,7 @@ function onLoad()
         font_size      = 340,
         color          = {0.5, 0.5, 0.5},
         font_color     = {1, 1, 1},
-        tooltip        = "随机设置起始卡片\n并据人数设置筹码",
+        tooltip        = "随机设置起始卡片\n并据人数设置筹码"
     }
     self.createButton(buttonParams)
 end

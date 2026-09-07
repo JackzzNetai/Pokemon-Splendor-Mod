@@ -83,27 +83,27 @@ CONFIG = {
     PLAYER_ZONES = {
         Purple = {
             cards = { "", "", "", "", "" },
-            balls = "",
+            balls = ""
         },
         Red = {
             cards = { "", "", "", "", "" },
-            balls = "",
+            balls = ""
         },
         Green = {
             cards = { "671ca5", "319bdb", "28ca61", "23c633", "68c2da" },
-            balls = "b38317",
+            balls = "b38317"
         },
         Pink = {
             cards = { "", "", "", "", "" },
-            balls = "",
-        },
+            balls = ""
+        }
     },
 
     STATS_MATS = {
         Purple = "",
         Red    = "",
         Green  = "674b1c", -- confirm in TTS
-        Pink   = "",
+        Pink   = ""
     },
 
     DISCOUNT_DISPLAY = {
@@ -115,9 +115,8 @@ CONFIG = {
             greatball  = {-0.01459, 0.51, 0.05},
             ultraball  = {0.13085, 0.51, 0.05},
             healball   = {0.27630, 0.51, 0.05},
-            quickball  = {0.42174, 0.51, 0.05},
-            masterball = {-0.30548, 0.51, 0.05},
-        },
+            quickball  = {0.42174, 0.51, 0.05}
+        }
     },
 
     RESOURCE_DISPLAY = {
@@ -130,9 +129,16 @@ CONFIG = {
             ultraball  = {0.13085, 0.51, -0.15},
             healball   = {0.27630, 0.51, -0.15},
             quickball  = {0.42174, 0.51, -0.15},
-            masterball = {-0.30548, 0.51, -0.15},
-        },
+            masterball = {-0.30548, 0.51, -0.15}
+        }
     },
+
+    VP_DISPLAY = {
+        fontSize  = 100,
+        fontColor = {1, 1, 1},
+        rotationOffset = {90, 0, 0},
+        offset = {-0.42, 0.51, 0.43}
+    }
 }
 
 CARD_DATABASE = {
@@ -715,7 +721,7 @@ local function castDownAt(position)
         direction    = {0, -1, 0},
         type         = 1, -- Ray
         max_distance = RAY_MAX_DISTANCE,
-        debug        = false,
+        debug        = false
     })
 end
 
@@ -931,6 +937,7 @@ end
 
 -- ============================================================================
 -- Player ball token counts (one Layout Zone per color)
+-- Player card discount / VP (five Layout Zones per color, joined)
 -- ============================================================================
 
 local BALL_TYPES = {
@@ -939,15 +946,21 @@ local BALL_TYPES = {
     ultraball  = true,
     healball   = true,
     quickball  = true,
-    masterball = true,
+    masterball = true
 }
 
 playerBalls = {}
+playerDiscounts = {}
+playerVp = {}
+playerCards = {}
 local ballsZoneGuidToColor = {}
+local cardsZoneGuidToColor = {}
 local discountTexts = {}
 local resourceTexts = {}
+local vpTexts = {}
 local DISCOUNT_TEXT_TAG = "stats_discount_text"
 local RESOURCE_TEXT_TAG = "stats_resource_text"
+local VP_TEXT_TAG = "stats_vp_text"
 
 local function emptyBallCounts()
     local counts = {}
@@ -982,6 +995,41 @@ local function buildBallsZoneIndex()
     end
 end
 
+local function buildCardsZoneIndex()
+    cardsZoneGuidToColor = {}
+    for color, zones in pairs(CONFIG.PLAYER_ZONES) do
+        local cardGuids = zones.cards
+        if cardGuids ~= nil then
+            for _, guid in ipairs(cardGuids) do
+                if guid ~= nil and guid ~= "" then
+                    cardsZoneGuidToColor[guid] = color
+                end
+            end
+        end
+    end
+end
+
+-- Returns id, entry; or nil, nil (silent skip / warned miss).
+local function resolveCard(object, color)
+    if object == nil or object.isDestroyed() then
+        return nil, nil
+    end
+    local id = object.getGMNotes()
+    if id == nil or id == "" then
+        return nil, nil
+    end
+    local entry = CARD_DATABASE[id]
+    if entry == nil then
+        printToAll(
+            "Warning: " .. tostring(color) .. " card GM note '" .. tostring(id)
+                .. "' (GUID " .. object.getGUID() .. ") not in CARD_DATABASE.",
+            {1, 0.6, 0}
+        )
+        return nil, nil
+    end
+    return id, entry
+end
+
 local function setDisplayTextValue(store, color, ballType, count)
     local byColor = store[color]
     if byColor == nil then
@@ -992,6 +1040,18 @@ local function setDisplayTextValue(store, color, ballType, count)
         return
     end
     obj.TextTool.setValue(tostring(count))
+end
+
+local function formatVpDisplay(count)
+    return tostring(count)
+end
+
+local function setVpDisplayTextValue(color, count)
+    local obj = vpTexts[color]
+    if obj == nil or obj.isDestroyed() then
+        return
+    end
+    obj.TextTool.setValue(formatVpDisplay(count))
 end
 
 local function applyBallDelta(color, object, sign)
@@ -1039,6 +1099,95 @@ local function initPlayerBallsFromZones()
     end
 end
 
+local function ensurePlayerCardState(color)
+    if playerDiscounts[color] == nil then
+        playerDiscounts[color] = emptyBallCounts()
+    end
+    if playerVp[color] == nil then
+        playerVp[color] = 0
+    end
+    if playerCards[color] == nil then
+        playerCards[color] = {}
+    end
+end
+
+local function removeCardId(list, id)
+    for i, existing in ipairs(list) do
+        if existing == id then
+            table.remove(list, i)
+            return
+        end
+    end
+end
+
+local function applyCardDelta(color, object, sign)
+    local id, entry = resolveCard(object, color)
+    if id == nil then
+        return
+    end
+    ensurePlayerCardState(color)
+
+    local discounts = playerDiscounts[color]
+    for ballType, amount in pairs(entry.discount) do
+        local nextCount = discounts[ballType] + sign * amount
+        if nextCount < 0 then
+            printToAll(
+                "Warning: " .. color .. " " .. ballType
+                    .. " discount would go negative; clamped to 0.",
+                {1, 0.6, 0}
+            )
+            discounts[ballType] = 0
+            setDisplayTextValue(discountTexts, color, ballType, 0)
+        else
+            discounts[ballType] = nextCount
+            setDisplayTextValue(discountTexts, color, ballType, -nextCount)
+        end
+    end
+
+    local nextVp = playerVp[color] + sign * (entry.vp or 0)
+    if nextVp < 0 then
+        printToAll(
+            "Warning: " .. color .. " VP would go negative; clamped to 0.",
+            {1, 0.6, 0}
+        )
+        playerVp[color] = 0
+        setVpDisplayTextValue(color, 0)
+    else
+        playerVp[color] = nextVp
+        setVpDisplayTextValue(color, nextVp)
+    end
+
+    if sign > 0 then
+        table.insert(playerCards[color], id)
+    else
+        removeCardId(playerCards[color], id)
+    end
+end
+
+local function initPlayerCardsFromZones()
+    buildCardsZoneIndex()
+    playerDiscounts = {}
+    playerVp = {}
+    playerCards = {}
+
+    for color, zones in pairs(CONFIG.PLAYER_ZONES) do
+        ensurePlayerCardState(color)
+        local cardGuids = zones.cards
+        if cardGuids ~= nil then
+            for _, guid in ipairs(cardGuids) do
+                if guid ~= nil and guid ~= "" then
+                    local zone = getObjectFromGUID(guid)
+                    if zone ~= nil then
+                        for _, obj in ipairs(zone.getObjects()) do
+                            applyCardDelta(color, obj, 1)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
 local function clearTaggedTexts(tag)
     for _, obj in ipairs(getObjectsWithTag(tag)) do
         if obj ~= nil and not obj.isDestroyed() then
@@ -1051,7 +1200,7 @@ local function addRotations(a, b)
     return {
         (a[1] or a.x or 0) + (b[1] or b.x or 0),
         (a[2] or a.y or 0) + (b[2] or b.y or 0),
-        (a[3] or a.z or 0) + (b[3] or b.z or 0),
+        (a[3] or a.z or 0) + (b[3] or b.z or 0)
     }
 end
 
@@ -1086,9 +1235,41 @@ local function spawnDisplayTexts(cfg, tag, store, valueFor)
                                 store[colorKey] = {}
                             end
                             store[colorKey][ballKey] = obj
-                        end,
+                        end
                     })
                 end
+            end
+        end
+    end
+end
+
+local function spawnVpTexts()
+    local cfg = CONFIG.VP_DISPLAY
+    local rotOff = cfg.rotationOffset or {0, 0, 0}
+
+    for color, matGuid in pairs(CONFIG.STATS_MATS) do
+        if matGuid ~= nil and matGuid ~= "" then
+            local mat = getObjectFromGUID(matGuid)
+            if mat ~= nil then
+                local colorKey = color
+                spawnObject({
+                    type              = "3DText",
+                    position          = mat.positionToWorld(cfg.offset),
+                    rotation          = addRotations(mat.getRotation(), rotOff),
+                    sound             = false,
+                    callback_function = function(obj)
+                        if obj == nil or obj.isDestroyed() then
+                            return
+                        end
+                        obj.TextTool.setValue(formatVpDisplay(playerVp[colorKey] or 0))
+                        obj.TextTool.setFontSize(cfg.fontSize)
+                        obj.TextTool.setFontColor(cfg.fontColor)
+                        obj.addTag(VP_TEXT_TAG)
+                        obj.setLock(true)
+                        obj.interactable = false
+                        vpTexts[colorKey] = obj
+                    end
+                })
             end
         end
     end
@@ -1097,11 +1278,16 @@ end
 local function spawnStatsTexts()
     clearTaggedTexts(DISCOUNT_TEXT_TAG)
     clearTaggedTexts(RESOURCE_TEXT_TAG)
+    clearTaggedTexts(VP_TEXT_TAG)
     discountTexts = {}
     resourceTexts = {}
+    vpTexts = {}
 
-    spawnDisplayTexts(CONFIG.DISCOUNT_DISPLAY, DISCOUNT_TEXT_TAG, discountTexts, function()
-        return 0
+    spawnDisplayTexts(CONFIG.DISCOUNT_DISPLAY, DISCOUNT_TEXT_TAG, discountTexts, function(color, ballType)
+        if playerDiscounts[color] == nil then
+            return 0
+        end
+        return -(playerDiscounts[color][ballType] or 0)
     end)
     spawnDisplayTexts(CONFIG.RESOURCE_DISPLAY, RESOURCE_TEXT_TAG, resourceTexts, function(color, ballType)
         if playerBalls[color] == nil then
@@ -1109,28 +1295,39 @@ local function spawnStatsTexts()
         end
         return playerBalls[color][ballType] or 0
     end)
+    spawnVpTexts()
 end
 
 function onObjectEnterZone(zone, object)
     if zone == nil or object == nil then
         return
     end
-    local color = ballsZoneGuidToColor[zone.getGUID()]
-    if color == nil then
+    local guid = zone.getGUID()
+    local ballColor = ballsZoneGuidToColor[guid]
+    if ballColor ~= nil then
+        applyBallDelta(ballColor, object, 1)
         return
     end
-    applyBallDelta(color, object, 1)
+    local cardColor = cardsZoneGuidToColor[guid]
+    if cardColor ~= nil then
+        applyCardDelta(cardColor, object, 1)
+    end
 end
 
 function onObjectLeaveZone(zone, object)
     if zone == nil or object == nil then
         return
     end
-    local color = ballsZoneGuidToColor[zone.getGUID()]
-    if color == nil then
+    local guid = zone.getGUID()
+    local ballColor = ballsZoneGuidToColor[guid]
+    if ballColor ~= nil then
+        applyBallDelta(ballColor, object, -1)
         return
     end
-    applyBallDelta(color, object, -1)
+    local cardColor = cardsZoneGuidToColor[guid]
+    if cardColor ~= nil then
+        applyCardDelta(cardColor, object, -1)
+    end
 end
 
 local function getTokenUiAssets()
@@ -1164,6 +1361,7 @@ function onLoad()
     end
     registerTokenUiAssets()
     initPlayerBallsFromZones()
+    initPlayerCardsFromZones()
     spawnStatsTexts()
 end
 
@@ -1180,7 +1378,7 @@ local BALL_COLORS = {
     ultraball  = "000000",
     healball   = "FF80C8",
     quickball  = "FFFF00",
-    masterball = "A855F7",
+    masterball = "A855F7"
 }
 
 local function formatCost(cost)
@@ -1226,7 +1424,7 @@ function onObjectHover(player_color, hovered_object)
                     if entry ~= nil then
                         local lines = {
                             formatVpDiscount(entry),
-                            formatCost(entry.catch_cost),
+                            formatCost(entry.catch_cost)
                         }
                         if hasCost(entry.evolution_cost) then
                             table.insert(lines, "evolution_cost: " .. formatCost(entry.evolution_cost))
