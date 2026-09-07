@@ -1,13 +1,19 @@
 -- ==============================================================================
 -- Splendor: Pokemon - Global Game Manager (Static Configuration)
+-- CONSTANTS: numbers we chose to name and reuse (not every literal).
+-- CONFIG: parameters the mod needs to run (tags, URLs, GUIDs, sizes, zones).
+--         Those parameters may still contain one-off numbers.
 -- ==============================================================================
 
 local CONSTANTS = {
     DECK_Y  = 1.692,
     TOKEN_Y = 2.29,
     TOKEN_Z = -5.81,
+    WARN_ORANGE = {1, 0.6, 0},
     STATS_ICON_OFFSET_Y = 27,
     STATS_TEXT_FONT_COLOR = {1, 1, 1},
+    STATS_TEXT_FONT_COLOR_AFFORDABLE = {0, 0.75, 0},
+    STATS_TEXT_FONT_COLOR_SHORT = {1, 0.2, 0.2},
     STATS_TEXT_FONT_SIZE = {
         DISCOUNT = 60,
         COST_RESOURCE = 90,
@@ -131,11 +137,11 @@ CONFIG = {
     STATS_MATS = {
         Purple = "",
         Red    = "",
-        Green  = "674b1c", -- confirm in TTS
+        Green  = "674b1c",
         Pink   = ""
     },
 
-    -- offsets are built in spawnDisplayTexts from STATS_TEXT_X / Y / z / xDelta
+    -- offsets are built in spawnDisplayTexts from STATS_TEXT_X / Y / Z / X_DELTA
     DISCOUNT_DISPLAY = {
         fontSize = CONSTANTS.STATS_TEXT_FONT_SIZE.DISCOUNT,
         z = CONSTANTS.STATS_TEXT_Z.DISCOUNT,
@@ -162,6 +168,8 @@ CONFIG = {
 }
 
 CARD_DATABASE = {
+    -- Keys are the GM notes on each card in game.
+    --
     -- Template format:
     -- ["[discount]_[tier]_[family]_[index]"] = {
     --     catch_cost = { [token_type]=amount, ... },
@@ -991,12 +999,11 @@ local BALL_TYPES = {
     masterball = true
 }
 
-local WARN_ORANGE = {1, 0.6, 0}
-
 playerBalls = {}
 playerDiscounts = {}
 playerVp = {}
 playerCards = {}
+local lastAdjustedCosts = {}
 local ballsZoneGuidToColor = {}
 local cardsZoneGuidToColor = {}
 local discountTexts = {}
@@ -1077,7 +1084,7 @@ local function resolveCard(object, color)
         printToAll(
             "Warning: " .. tostring(color) .. " card GM note '" .. tostring(id)
                 .. "' (GUID " .. object.getGUID() .. ") not in CARD_DATABASE.",
-            WARN_ORANGE
+            CONSTANTS.WARN_ORANGE
         )
         return nil, nil
     end
@@ -1099,6 +1106,43 @@ local function setDisplayTextValue(store, color, ballType, count)
     setTextToolValue(byColor[ballType], count)
 end
 
+local function displayedCost(raw)
+    if raw < 0 then
+        return 0
+    end
+    return raw
+end
+
+local function setCostDisplay(color, ballType)
+    local byColor = costTexts[color]
+    if byColor == nil then
+        return
+    end
+    local obj = byColor[ballType]
+    if obj == nil or obj.isDestroyed() then
+        return
+    end
+    local adjusted = lastAdjustedCosts[color]
+    if adjusted == nil then
+        obj.TextTool.setValue("0")
+        obj.TextTool.setFontColor(CONSTANTS.STATS_TEXT_FONT_COLOR)
+        return
+    end
+    local shown = displayedCost(adjusted[ballType])
+    obj.TextTool.setValue(tostring(shown))
+    if shown <= playerBalls[color][ballType] then
+        obj.TextTool.setFontColor(CONSTANTS.STATS_TEXT_FONT_COLOR_AFFORDABLE)
+    else
+        obj.TextTool.setFontColor(CONSTANTS.STATS_TEXT_FONT_COLOR_SHORT)
+    end
+end
+
+local function writeCostDisplays(color)
+    for ballType, _ in pairs(BALL_TYPES) do
+        setCostDisplay(color, ballType)
+    end
+end
+
 local function setVpDisplayTextValue(color, count)
     setTextToolValue(vpTexts[color], count)
 end
@@ -1115,7 +1159,7 @@ end
 local function applyClampedDelta(current, delta, warning)
     local nextCount = current + delta
     if nextCount < 0 then
-        printToAll(warning, WARN_ORANGE)
+        printToAll(warning, CONSTANTS.WARN_ORANGE)
         return 0
     end
     return nextCount
@@ -1137,6 +1181,10 @@ local function applyBallDelta(color, object, sign)
     )
     counts[ballType] = nextCount
     setDisplayTextValue(resourceTexts, color, ballType, nextCount)
+    local remembered = lastAdjustedCosts[color]
+    if remembered ~= nil then
+        setCostDisplay(color, ballType)
+    end
 end
 
 local function initPlayerBallsFromZones()
@@ -1191,6 +1239,11 @@ local function applyCardDelta(color, object, sign)
         )
         discounts[ballType] = nextCount
         setDisplayTextValue(discountTexts, color, ballType, -nextCount)
+        local remembered = lastAdjustedCosts[color]
+        if remembered ~= nil then
+            remembered[ballType] = remembered[ballType] - sign * amount
+            setCostDisplay(color, ballType)
+        end
     end
 
     local nextVp = applyClampedDelta(
@@ -1212,9 +1265,11 @@ local function initPlayerCardsFromZones()
     playerDiscounts = {}
     playerVp = {}
     playerCards = {}
+    lastAdjustedCosts = {}
 
     for color, zones in pairs(CONFIG.PLAYER_ZONES) do
         ensurePlayerCardState(color)
+        lastAdjustedCosts[color] = nil
         if zones.cards ~= nil then
             for _, guid in ipairs(zones.cards) do
                 forEachZoneObject(guid, function(obj)
@@ -1244,7 +1299,7 @@ end
 local function configureStatsText(obj, cfg, tag, value)
     obj.TextTool.setValue(tostring(value))
     obj.TextTool.setFontSize(cfg.fontSize)
-    obj.TextTool.setFontColor(cfg.fontColor)
+    obj.TextTool.setFontColor(CONSTANTS.STATS_TEXT_FONT_COLOR)
     obj.addTag(tag)
     obj.setLock(true)
     obj.interactable = false
@@ -1278,11 +1333,9 @@ local function buildStatsOffsets(cfg)
     return offsets
 end
 
--- cfg.offset -> one text per mat; else one text per ball from STATS_TEXT_X
+-- cfg.offset -> one text per mat; else one text per ball from CONSTANTS.STATS_TEXT_X
 local function spawnDisplayTexts(cfg, tag, store, valueFor)
-    cfg.fontColor = cfg.fontColor or CONSTANTS.STATS_TEXT_FONT_COLOR
-    cfg.rotationOffset = cfg.rotationOffset or CONSTANTS.STATS_TEXT_ROTATION_OFFSET
-    local rotOff = cfg.rotationOffset
+    local rotOff = CONSTANTS.STATS_TEXT_ROTATION_OFFSET
     local single = cfg.offset ~= nil
     if not single and cfg.offsets == nil then
         cfg.offsets = buildStatsOffsets(cfg)
@@ -1356,10 +1409,11 @@ function clearPlayerStats()
         playerDiscounts[color] = emptyBallCounts()
         playerVp[color] = 0
         playerCards[color] = {}
+        lastAdjustedCosts[color] = nil
         for ballType, _ in pairs(BALL_TYPES) do
             setDisplayTextValue(resourceTexts, color, ballType, 0)
-            setDisplayTextValue(costTexts, color, ballType, 0)
             setDisplayTextValue(discountTexts, color, ballType, 0)
+            setCostDisplay(color, ballType) -- writes "0" and forces white font color
         end
         setVpDisplayTextValue(color, 0)
     end
@@ -1449,74 +1503,84 @@ end
 
 
 -- ============================================================================
--- GM hover debug (Black): print card id and stats
+-- Hover: purchasable card catch costs
 -- ============================================================================
 
-showDetails = false
-
-local BALL_COLORS = {
-    pokeball   = "FF0000",
-    greatball  = "0096FF",
-    ultraball  = "000000",
-    healball   = "FF80C8",
-    quickball  = "FFFF00",
-    masterball = "A855F7"
-}
-
-local function formatCost(cost)
-    if cost == nil then
-        return ""
-    end
-    local parts = {}
-    for ball, amount in pairs(cost) do
-        local hex = BALL_COLORS[ball] or "FFFFFF"
-        table.insert(parts, "[" .. hex .. "]" .. ball .. "=" .. tostring(amount) .. "[-]")
-    end
-    return table.concat(parts, ", ")
-end
-
-local function formatVpDiscount(entry)
-    local ball, amount = next(entry.discount)
-    local hex = BALL_COLORS[ball] or "FFFFFF"
-    return tostring(entry.vp) .. ", [" .. hex .. "]" .. ball .. " *" .. tostring(amount) .. "[-]"
-end
-
-local function hasCost(cost)
-    if cost == nil then
+local function cardInPlayerHand(object, color)
+    local player = Player[color]
+    if player == nil then
         return false
     end
-    return next(cost) ~= nil
+    local hand = player.getHandObjects()
+    if hand == nil then
+        return false
+    end
+    local guid = object.getGUID()
+    for _, obj in ipairs(hand) do
+        if obj ~= nil and not obj.isDestroyed() and obj.getGUID() == guid then
+            return true
+        end
+    end
+    return false
+end
+
+local function isPurchasableCard(object, color)
+    if object == nil or object.isDestroyed() or object.type ~= "Card" then
+        return false
+    end
+    if cardInPlayerHand(object, color) then
+        return true
+    end
+    if object.is_face_down then
+        return false
+    end
+    return inXZZone(object.getPosition(), CONFIG.MARKET_ZONE)
+end
+
+local function applyCatchCostsFromEntry(color, entry)
+    if costTexts[color] == nil then
+        return
+    end
+    ensurePlayerCardState(color)
+    if playerBalls[color] == nil then
+        playerBalls[color] = emptyBallCounts()
+    end
+    local catch = entry.catch_cost or {}
+    local discounts = playerDiscounts[color]
+    local adjusted = {}
+    for ballType, _ in pairs(BALL_TYPES) do
+        adjusted[ballType] = (catch[ballType] or 0) - discounts[ballType]
+    end
+    lastAdjustedCosts[color] = adjusted
+    writeCostDisplays(color)
 end
 
 function onObjectHover(player_color, hovered_object)
-    -- 1. Restrict the trigger strictly to the Game Master
-    if player_color == "Black" then
-        
-        -- 2. When the cursor moves off an object onto the table, TTS passes 'nil'.
-        -- We must verify an object actually exists under the cursor to prevent errors.
-        if hovered_object ~= nil then
-            
-            local gmNote = hovered_object.getGMNotes()
-            
-            -- 3. Check if the string exists and is not empty
-            if gmNote ~= nil and gmNote ~= "" then
-                printToColor("id: " .. gmNote, "Black", {1, 0.8, 0})
-                if showDetails then
-                    local entry = CARD_DATABASE[gmNote]
-                    if entry ~= nil then
-                        local lines = {
-                            formatVpDiscount(entry),
-                            formatCost(entry.catch_cost)
-                        }
-                        if hasCost(entry.evolution_cost) then
-                            table.insert(lines, "evolution_cost: " .. formatCost(entry.evolution_cost))
-                        end
-                        printToColor(table.concat(lines, "\n"), "Black", {1, 1, 1})
-                    end
-                end
-            end
-        end
+    if not isPurchasableCard(hovered_object, player_color) then
+        return
     end
+    if costTexts[player_color] == nil then
+        return
+    end
+    local id = hovered_object.getGMNotes()
+    if id == nil or id == "" then
+        printToAll(
+            "Warning: " .. tostring(player_color) .. " card has empty GM note (GUID "
+                .. hovered_object.getGUID() .. "); not in CARD_DATABASE.",
+            CONSTANTS.WARN_ORANGE
+        )
+        return
+    end
+    local entry = CARD_DATABASE[id]
+    if entry == nil then
+        printToAll(
+            "Warning: " .. tostring(player_color) .. " card GM note '" .. tostring(id)
+                .. "' (GUID " .. hovered_object.getGUID() .. ") not in CARD_DATABASE.",
+            CONSTANTS.WARN_ORANGE
+        )
+        return
+    end
+    applyCatchCostsFromEntry(player_color, entry)
 end
 
 -- ============================================================================
