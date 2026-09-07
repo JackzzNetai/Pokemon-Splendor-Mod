@@ -102,6 +102,13 @@ CONFIG = {
         zMax = 22.3
     },
 
+    MARKET_ZONE = {
+        xMin = -11.9464,
+        xMax =  11.9797,
+        zMin =  -7.9778,
+        zMax =   8.9238
+    },
+
     PLAYER_ZONES = {
         Purple = {
             cards = { "", "", "", "", "" },
