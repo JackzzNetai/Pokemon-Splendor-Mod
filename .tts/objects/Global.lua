@@ -175,8 +175,8 @@ CONFIG = {
         offset = {CONSTANTS.STATS_TEXT_VP_X, CONSTANTS.STATS_TEXT_Y, 0.43}
     },
 
-    EVO_PREVIEW_BUTTON = {
-        label    = "进化预览",
+    EVO_HINT_BUTTON = {
+        label    = "进化提示",
         position = {-CONSTANTS.STATS_TEXT_VP_X, CONSTANTS.STATS_TEXT_Y, -0.042}
     },
     PAY_BUTTON = {
@@ -773,15 +773,15 @@ local function castDownAt(position)
     })
 end
 
-local function faceUpCardAt(position)
+local function faceUpCardObjectAt(position)
     local hits = castDownAt(position)
     for _, hit in ipairs(hits) do
         local obj = hit.hit_object
         if obj ~= nil and not obj.isDestroyed() and obj.type == "Card" and not obj.is_face_down then
-            return true
+            return obj
         end
     end
-    return false
+    return nil
 end
 
 local function objectAt(position, object)
@@ -995,7 +995,7 @@ function onObjectDrop(player_color, object)
         if not gameInitialized then
             return
         end
-        if faceUpCardAt(pending.position) then
+        if faceUpCardObjectAt(pending.position) then
             return
         end
         if pending.kind == "row" then
@@ -1035,15 +1035,17 @@ local playerBalls = {}
 local playerDiscounts = {}
 local playerVp = {}
 local playerCards = {}
+local evolveTargets = {} -- [color][target(truncated)] = source.evolution_cost
 local lastAdjustedCosts = {}
 local ballsZoneGuidToColor = {}
 local cardsZoneGuidToColor = {}
+local matGuidToColor = {}
 local discountTexts = {}
 local costTexts = {}
 local resourceTexts = {}
 local slashTexts = {}
 local vpTexts = {}
-local evoPreviewTexts = {}
+local evoHintTexts = {}
 local payTexts = {}
 local useMasterTexts = {}
 local DISCOUNT_TEXT_TAG = "stats_discount_text"
@@ -1051,7 +1053,7 @@ local COST_TEXT_TAG = "stats_cost_text"
 local RESOURCE_TEXT_TAG = "stats_resource_text"
 local SLASH_TEXT_TAG = "stats_slash_text"
 local VP_TEXT_TAG = "stats_vp_text"
-local EVO_PREVIEW_TEXT_TAG = "stats_evo_preview_text"
+local EVO_HINT_TEXT_TAG = "stats_evo_hint_text"
 local PAY_TEXT_TAG = "stats_pay_text"
 local USE_MASTER_TEXT_TAG = "stats_use_master_text"
 
@@ -1081,6 +1083,7 @@ end
 local function buildPlayerZoneIndexes()
     ballsZoneGuidToColor = {}
     cardsZoneGuidToColor = {}
+    matGuidToColor = {}
     for color, zones in pairs(CONFIG.PLAYER_ZONES) do
         if hasGuid(zones.balls) then
             ballsZoneGuidToColor[zones.balls] = color
@@ -1091,6 +1094,11 @@ local function buildPlayerZoneIndexes()
                     cardsZoneGuidToColor[guid] = color
                 end
             end
+        end
+    end
+    for color, matGuid in pairs(CONFIG.STATS_MATS) do
+        if hasGuid(matGuid) then
+            matGuidToColor[matGuid] = color
         end
     end
 end
@@ -1249,15 +1257,27 @@ local function ensurePlayerCardState(color)
     if playerCards[color] == nil then
         playerCards[color] = {}
     end
+    if evolveTargets[color] == nil then
+        evolveTargets[color] = {}
+    end
 end
 
-local function removeCardId(list, id)
-    for i, existing in ipairs(list) do
-        if existing == id then
-            table.remove(list, i)
-            return
-        end
+-- Drops _[index] from [discount]_[tier]_[family]_[index]; otherwise returns id.
+local function truncatedCardId(id)
+    local truncated = id:match("^([^_]+_[^_]+_[^_]+)_%d+$")
+    if truncated ~= nil then
+        return truncated
     end
+    return id
+end
+
+-- Next-stage truncated id for stage1/stage2; nil otherwise.
+local function evolveTargetOf(key)
+    local discount, stage, family = key:match("^([^_]+)_stage([12])_(%d+)$")
+    if discount == nil then
+        return nil
+    end
+    return discount .. "_stage" .. (tonumber(stage) + 1) .. "_" .. family
 end
 
 local function applyCardDelta(color, object, sign)
@@ -1292,10 +1312,48 @@ local function applyCardDelta(color, object, sign)
     playerVp[color] = nextVp
     setVpDisplayTextValue(color, nextVp)
 
+    local key = truncatedCardId(id)
+    local cards = playerCards[color]
+    local targets = evolveTargets[color]
     if sign > 0 then
-        table.insert(playerCards[color], id)
+        local isNew = cards[key] == nil
+        cards[key] = (cards[key] or 0) + 1
+        if isNew then
+            local target = evolveTargetOf(key)
+            if target ~= nil then
+                local sourceId = key .. "_1"
+                local sourceEntry = CARD_DATABASE[sourceId]
+                if sourceEntry == nil then
+                    printToAll(
+                        "Warning: " .. tostring(color) .. " card GM note '" .. sourceId
+                            .. "' not in CARD_DATABASE.",
+                        CONSTANTS.WARN_ORANGE_COLOR
+                    )
+                else
+                    targets[target] = sourceEntry.evolution_cost
+                end
+            end
+        end
     else
-        removeCardId(playerCards[color], id)
+        local count = cards[key]
+        if count == nil then
+            printToAll(
+                "Warning: " .. tostring(color) .. " card '" .. tostring(key)
+                    .. "' left a layout zone but was not in playerCards.",
+                CONSTANTS.WARN_ORANGE_COLOR
+            )
+        else
+            count = count - 1
+            if count == 0 then
+                cards[key] = nil
+                local target = evolveTargetOf(key)
+                if target ~= nil then
+                    targets[target] = nil
+                end
+            else
+                cards[key] = count
+            end
+        end
     end
 end
 
@@ -1303,6 +1361,7 @@ local function initPlayerCardsFromZones()
     playerDiscounts = {}
     playerVp = {}
     playerCards = {}
+    evolveTargets = {}
     lastAdjustedCosts = {}
 
     for color, zones in pairs(CONFIG.PLAYER_ZONES) do
@@ -1441,7 +1500,81 @@ local function spawnStatsTexts()
     end)
 end
 
-function onEvoPreviewClicked(obj, playerColor, isAltClick)
+local function collectEvoHintCandidates(player)
+    local cards = {}
+    for _, tier in ipairs({"stage2", "stage3"}) do
+        for slotIndex = 0, SLOT_COUNT - 1 do
+            local card = faceUpCardObjectAt(getSlotPosition(tier, slotIndex))
+            if card ~= nil then
+                table.insert(cards, card)
+            end
+        end
+    end
+    if player.getHandCount() >= 1 then
+        local hand = player.getHandObjects()
+        if hand ~= nil then
+            for _, card in ipairs(hand) do
+                if card ~= nil and card.type == "Card" then
+                    table.insert(cards, card)
+                end
+            end
+        end
+    end
+    return cards
+end
+
+local function canAffordEvolveTarget(color, cost)
+    for ballType, amount in pairs(cost) do
+        if countOrZero(playerDiscounts, color, ballType) < amount then
+            return false
+        end
+    end
+    return true
+end
+
+local function pingEvoHintCards(color, player, cards, accept)
+    for _, card in ipairs(cards) do
+        local id = card.getGMNotes()
+        if id == nil or id == "" then
+            printToAll(
+                "Warning: " .. tostring(color) .. " card has empty GM note (GUID "
+                    .. card.getGUID() .. "); not in CARD_DATABASE.",
+                CONSTANTS.WARN_ORANGE_COLOR
+            )
+        elseif accept(truncatedCardId(id)) then
+            player.pingTable(card.getPosition())
+        end
+    end
+end
+
+function onEvoHintClicked(obj, playerColor, isAltClick)
+    if obj == nil or obj.isDestroyed() then
+        return
+    end
+    local color = matGuidToColor[obj.getGUID()]
+    if color == nil then
+        return
+    end
+    ensurePlayerCardState(color)
+    local player = Player[color]
+    if player == nil then
+        return
+    end
+
+    local accept
+    if isAltClick then
+        -- right click
+        accept = function(key)
+            local cost = evolveTargets[color][key]
+            return cost and canAffordEvolveTarget(color, cost)
+        end
+    else
+        -- left click
+        accept = function(key)
+            return evolveTargets[color][key]
+        end
+    end
+    pingEvoHintCards(color, player, collectEvoHintCandidates(player), accept)
 end
 
 function onPayClicked(obj, playerColor, isAltClick)
@@ -1470,17 +1603,17 @@ local function labelDisplayFromButton(buttonCfg)
 end
 
 local function spawnStatsMatLabels()
-    clearTaggedTexts(EVO_PREVIEW_TEXT_TAG)
+    clearTaggedTexts(EVO_HINT_TEXT_TAG)
     clearTaggedTexts(PAY_TEXT_TAG)
     clearTaggedTexts(USE_MASTER_TEXT_TAG)
-    evoPreviewTexts = {}
+    evoHintTexts = {}
     payTexts = {}
     useMasterTexts = {}
 
     spawnDisplayTexts(
-        labelDisplayFromButton(CONFIG.EVO_PREVIEW_BUTTON),
-        EVO_PREVIEW_TEXT_TAG, evoPreviewTexts,
-        function() return CONFIG.EVO_PREVIEW_BUTTON.label end
+        labelDisplayFromButton(CONFIG.EVO_HINT_BUTTON),
+        EVO_HINT_TEXT_TAG, evoHintTexts,
+        function() return CONFIG.EVO_HINT_BUTTON.label end
     )
     spawnDisplayTexts(
         labelDisplayFromButton(CONFIG.PAY_BUTTON),
@@ -1500,7 +1633,7 @@ local function spawnStatsMatButtons()
             local mat = getObjectFromGUID(matGuid)
             if mat ~= nil then
                 mat.clearButtons()
-                addStatsMatButton(mat, CONFIG.EVO_PREVIEW_BUTTON, "onEvoPreviewClicked")
+                addStatsMatButton(mat, CONFIG.EVO_HINT_BUTTON, "onEvoHintClicked")
                 addStatsMatButton(mat, CONFIG.PAY_BUTTON, "onPayClicked")
                 addStatsMatButton(mat, CONFIG.USE_MASTER_BUTTON, "onUseMasterClicked")
             end
@@ -1515,6 +1648,7 @@ function clearPlayerStats()
         playerDiscounts[color] = emptyBallCounts()
         playerVp[color] = 0
         playerCards[color] = {}
+        evolveTargets[color] = {}
         lastAdjustedCosts[color] = nil
         for ballType, _ in pairs(BALL_TYPES) do
             setDisplayTextValue(resourceTexts, color, ballType, 0)
