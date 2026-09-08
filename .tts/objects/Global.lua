@@ -6,20 +6,23 @@
 -- ==============================================================================
 
 local CONSTANTS = {
-    DECK_Y  = 1.692,
-    TOKEN_Y = 2.29,
-    TOKEN_Z = -5.81,
-    WARN_ORANGE = {1, 0.6, 0},
-    STATS_ICON_OFFSET_Y = 27,
+    WARN_ORANGE_COLOR = {1, 0.6, 0},
     STATS_TEXT_FONT_COLOR = {1, 1, 1},
     STATS_TEXT_FONT_COLOR_AFFORDABLE = {0, 0.75, 0},
     STATS_TEXT_FONT_COLOR_SHORT = {1, 0.2, 0.2},
+    STATS_BUTTON_COLOR = {0.18, 0.18, 0.22},
+
     STATS_TEXT_FONT_SIZE = {
         DISCOUNT = 60,
         COST_RESOURCE = 90,
-        VP = 100
+        VP = 100,
+        BUTTON_LABEL = 30
     },
-    STATS_TEXT_ROTATION_OFFSET = {90, 0, 0},
+    STATS_BUTTON_WIDTH = 60,
+    STATS_BUTTON_HEIGHT = 100,
+
+    STATS_TEXT_ROTATION = {90, 0, 0},
+    
     STATS_TEXT_X = {
         pokeball   = -0.16004,
         greatball  = -0.01459,
@@ -28,12 +31,18 @@ local CONSTANTS = {
         quickball  = 0.42174,
         masterball = -0.30548
     },
+    STATS_TEXT_VP_X = -0.43,
     STATS_TEXT_COST_RESOURCE_X_DELTA = 0.035,
     STATS_TEXT_Y = 0.51,
     STATS_TEXT_Z = {
         DISCOUNT = 0.05,
         COST_RESOURCE = -0.15
-    }
+    },
+    STATS_ICON_Y = 27,
+    STATS_BUTTON_LABEL_Z_DELTA = 0.047,
+    DECK_Y  = 1.692,
+    TOKEN_Y = 2.29,
+    TOKEN_Z = -5.81,
 }
 
 CONFIG = {
@@ -163,7 +172,20 @@ CONFIG = {
     },
     VP_DISPLAY = {
         fontSize = CONSTANTS.STATS_TEXT_FONT_SIZE.VP,
-        offset = {-0.43, CONSTANTS.STATS_TEXT_Y, 0.43}
+        offset = {CONSTANTS.STATS_TEXT_VP_X, CONSTANTS.STATS_TEXT_Y, 0.43}
+    },
+
+    EVO_PREVIEW_BUTTON = {
+        label    = "进化预览",
+        position = {-CONSTANTS.STATS_TEXT_VP_X, CONSTANTS.STATS_TEXT_Y, -0.042}
+    },
+    PAY_BUTTON = {
+        label    = "支付",
+        position = {-CONSTANTS.STATS_TEXT_VP_X, CONSTANTS.STATS_TEXT_Y, -0.305}
+    },
+    USE_MASTER_BUTTON = {
+        label    = "使用大师球",
+        position = {-CONSTANTS.STATS_TEXT_X.masterball, CONSTANTS.STATS_TEXT_Y, -0.042}
     }
 }
 
@@ -1021,11 +1043,17 @@ local costTexts = {}
 local resourceTexts = {}
 local slashTexts = {}
 local vpTexts = {}
+local evoPreviewTexts = {}
+local payTexts = {}
+local useMasterTexts = {}
 local DISCOUNT_TEXT_TAG = "stats_discount_text"
 local COST_TEXT_TAG = "stats_cost_text"
 local RESOURCE_TEXT_TAG = "stats_resource_text"
 local SLASH_TEXT_TAG = "stats_slash_text"
 local VP_TEXT_TAG = "stats_vp_text"
+local EVO_PREVIEW_TEXT_TAG = "stats_evo_preview_text"
+local PAY_TEXT_TAG = "stats_pay_text"
+local USE_MASTER_TEXT_TAG = "stats_use_master_text"
 
 local function emptyBallCounts()
     local counts = {}
@@ -1094,7 +1122,7 @@ local function resolveCard(object, color)
         printToAll(
             "Warning: " .. tostring(color) .. " card GM note '" .. tostring(id)
                 .. "' (GUID " .. object.getGUID() .. ") not in CARD_DATABASE.",
-            CONSTANTS.WARN_ORANGE
+            CONSTANTS.WARN_ORANGE_COLOR
         )
         return nil, nil
     end
@@ -1169,7 +1197,7 @@ end
 local function applyClampedDelta(current, delta, warning)
     local nextCount = current + delta
     if nextCount < 0 then
-        printToAll(warning, CONSTANTS.WARN_ORANGE)
+        printToAll(warning, CONSTANTS.WARN_ORANGE_COLOR)
         return 0
     end
     return nextCount
@@ -1345,7 +1373,7 @@ end
 
 -- cfg.offset -> one text per mat; else one text per ball from CONSTANTS.STATS_TEXT_X
 local function spawnDisplayTexts(cfg, tag, store, valueFor)
-    local rotOff = CONSTANTS.STATS_TEXT_ROTATION_OFFSET
+    local rotOff = CONSTANTS.STATS_TEXT_ROTATION
     local single = cfg.offset ~= nil
     if not single and cfg.offsets == nil then
         cfg.offsets = buildStatsOffsets(cfg)
@@ -1413,6 +1441,74 @@ local function spawnStatsTexts()
     end)
 end
 
+function onEvoPreviewClicked(obj, playerColor, isAltClick)
+end
+
+function onPayClicked(obj, playerColor, isAltClick)
+end
+
+function onUseMasterClicked(obj, playerColor, isAltClick)
+end
+
+local function addStatsMatButton(mat, cfg, clickFunction)
+    mat.createButton({
+        click_function = clickFunction,
+        function_owner = self,
+        position       = cfg.position,
+        width          = CONSTANTS.STATS_BUTTON_WIDTH,
+        height         = CONSTANTS.STATS_BUTTON_HEIGHT,
+        color          = CONSTANTS.STATS_BUTTON_COLOR
+    })
+end
+
+local function labelDisplayFromButton(buttonCfg)
+    local x, y, z = posXYZ(buttonCfg.position)
+    return {
+        fontSize = CONSTANTS.STATS_TEXT_FONT_SIZE.BUTTON_LABEL,
+        offset = { -x, y, z + CONSTANTS.STATS_BUTTON_LABEL_Z_DELTA }
+    }
+end
+
+local function spawnStatsMatLabels()
+    clearTaggedTexts(EVO_PREVIEW_TEXT_TAG)
+    clearTaggedTexts(PAY_TEXT_TAG)
+    clearTaggedTexts(USE_MASTER_TEXT_TAG)
+    evoPreviewTexts = {}
+    payTexts = {}
+    useMasterTexts = {}
+
+    spawnDisplayTexts(
+        labelDisplayFromButton(CONFIG.EVO_PREVIEW_BUTTON),
+        EVO_PREVIEW_TEXT_TAG, evoPreviewTexts,
+        function() return CONFIG.EVO_PREVIEW_BUTTON.label end
+    )
+    spawnDisplayTexts(
+        labelDisplayFromButton(CONFIG.PAY_BUTTON),
+        PAY_TEXT_TAG, payTexts,
+        function() return CONFIG.PAY_BUTTON.label end
+    )
+    spawnDisplayTexts(
+        labelDisplayFromButton(CONFIG.USE_MASTER_BUTTON),
+        USE_MASTER_TEXT_TAG, useMasterTexts,
+        function() return CONFIG.USE_MASTER_BUTTON.label end
+    )
+end
+
+local function spawnStatsMatButtons()
+    for _, matGuid in pairs(CONFIG.STATS_MATS) do
+        if hasGuid(matGuid) then
+            local mat = getObjectFromGUID(matGuid)
+            if mat ~= nil then
+                mat.clearButtons()
+                addStatsMatButton(mat, CONFIG.EVO_PREVIEW_BUTTON, "onEvoPreviewClicked")
+                addStatsMatButton(mat, CONFIG.PAY_BUTTON, "onPayClicked")
+                addStatsMatButton(mat, CONFIG.USE_MASTER_BUTTON, "onUseMasterClicked")
+            end
+        end
+    end
+    spawnStatsMatLabels()
+end
+
 function clearPlayerStats()
     for color, _ in pairs(CONFIG.PLAYER_ZONES) do
         playerBalls[color] = emptyBallCounts()
@@ -1477,7 +1573,7 @@ local function registerTokenUiAssets()
 end
 
 local function applyStatsMatIconOffsets()
-    local y = CONSTANTS.STATS_ICON_OFFSET_Y
+    local y = CONSTANTS.STATS_ICON_Y
     for _, matGuid in pairs(CONFIG.STATS_MATS) do
         if hasGuid(matGuid) then
             local mat = getObjectFromGUID(matGuid)
@@ -1509,6 +1605,7 @@ function onLoad()
     initPlayerBallsFromZones()
     initPlayerCardsFromZones()
     spawnStatsTexts()
+    spawnStatsMatButtons()
 end
 
 
@@ -1578,7 +1675,7 @@ function onObjectHover(player_color, hovered_object)
         printToAll(
             "Warning: " .. tostring(player_color) .. " card has empty GM note (GUID "
                 .. hovered_object.getGUID() .. "); not in CARD_DATABASE.",
-            CONSTANTS.WARN_ORANGE
+            CONSTANTS.WARN_ORANGE_COLOR
         )
         return
     end
@@ -1587,7 +1684,7 @@ function onObjectHover(player_color, hovered_object)
         printToAll(
             "Warning: " .. tostring(player_color) .. " card GM note '" .. tostring(id)
                 .. "' (GUID " .. hovered_object.getGUID() .. ") not in CARD_DATABASE.",
-            CONSTANTS.WARN_ORANGE
+            CONSTANTS.WARN_ORANGE_COLOR
         )
         return
     end
