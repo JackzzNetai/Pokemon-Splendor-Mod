@@ -721,8 +721,9 @@ end
 -- ============================================================================
 
 local SLOT_COUNT = 4
-local RAY_ORIGIN_Y_OFFSET = 2
-local RAY_MAX_DISTANCE = 5
+local RAY_ORIGIN_Y_OFFSET = 4
+local RAY_MAX_DISTANCE = 7
+local SNAP_SETTLE_SECONDS = 0.1
 
 -- Skipping false→true in onLoad: no player input there, and onLoad only reads/configures.
 gameInitialized = true
@@ -838,6 +839,7 @@ local function findRowSlot(object)
     if not STAGE_TIERS[tier] then
         return nil
     end
+    -- Safe at pickup: a card cannot leave MARKET_ZONE in the same instant it is picked up.
     if not inXZZone(object.getPosition(), CONFIG.MARKET_ZONE) then
         return nil
     end
@@ -861,6 +863,7 @@ local function findPileFaceUp(object)
     if not NON_STAGE_TIERS[tier] then
         return nil
     end
+    -- Safe at pickup: a card cannot leave MARKET_ZONE in the same instant it is picked up.
     if not inXZZone(object.getPosition(), CONFIG.MARKET_ZONE) then
         return nil
     end
@@ -950,6 +953,9 @@ function onObjectDrop(player_color, object)
         return
     end
     local guid = object.getGUID()
+    if guid == nil or guid == "" then
+        return
+    end
 
     if not gameInitialized then
         pendingTakes[guid] = nil
@@ -975,14 +981,18 @@ function onObjectDrop(player_color, object)
         elseif pending.kind == "pile" then
             revealPileTop(pending.tier)
         end
-    end, 0.5)
+    end, SNAP_SETTLE_SECONDS)
 end
 
 function onObjectDestroy(object)
     if object == nil then
         return
     end
-    pendingTakes[object.getGUID()] = nil
+    local guid = object.getGUID()
+    if guid == nil or guid == "" then
+        return
+    end
+    pendingTakes[guid] = nil
 end
 
 -- ============================================================================
@@ -999,10 +1009,10 @@ local BALL_TYPES = {
     masterball = true
 }
 
-playerBalls = {}
-playerDiscounts = {}
-playerVp = {}
-playerCards = {}
+local playerBalls = {}
+local playerDiscounts = {}
+local playerVp = {}
+local playerCards = {}
 local lastAdjustedCosts = {}
 local ballsZoneGuidToColor = {}
 local cardsZoneGuidToColor = {}
@@ -1508,7 +1518,8 @@ end
 
 local function cardInPlayerHand(object, color)
     local player = Player[color]
-    if player == nil then
+    -- Unseated players have no hand zone; getHandObjects() would throw.
+    if player == nil or player.getHandCount() < 1 then
         return false
     end
     local hand = player.getHandObjects()
