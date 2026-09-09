@@ -127,28 +127,28 @@ CONFIG = {
 
     PLAYER_ZONES = {
         Purple = {
-            cards = { "", "", "", "", "" },
-            balls = ""
+            cards = { "6aae89", "43b47b", "48e1cf", "28ec3a", "389f10" },
+            tokens = "fd7598"
         },
         Red = {
-            cards = { "", "", "", "", "" },
-            balls = ""
+            cards = { "eb4ecc", "595551", "e98ba9", "7af763", "b29bbc" },
+            tokens = "3e3fd0"
         },
         Green = {
             cards = { "671ca5", "319bdb", "28ca61", "23c633", "68c2da" },
-            balls = "b38317"
+            tokens = "b38317"
         },
         Pink = {
-            cards = { "", "", "", "", "" },
-            balls = ""
+            cards = { "1e9803", "c7daeb", "fe3b7f", "ba85cb", "edc134" },
+            tokens = "0ed047"
         }
     },
 
     STATS_MATS = {
-        Purple = "",
-        Red    = "",
+        Purple = "2a66d4",
+        Red    = "264624",
         Green  = "674b1c",
-        Pink   = ""
+        Pink   = "565e01"
     },
 
     -- offsets are built in spawnDisplayTexts from STATS_TEXT_X / Y / Z / X_DELTA
@@ -1797,15 +1797,15 @@ local function tryPayShownCosts(color)
         needed[tokenType] = amount
     end
     local moving = {}
-    local zones = CONFIG.PLAYER_ZONES[color]
-    if zones ~= nil then
-        forEachZoneObject(zones.tokens, function(obj)
+    local tokenZone = getObjectFromGUID(CONFIG.PLAYER_ZONES[color].tokens)
+    if alive(tokenZone) then
+        for _, obj in ipairs(tokenZone.getObjects()) do
             local tokenType = tokenTypeOf(obj)
             if tokenType ~= nil and needed[tokenType] > 0 then
                 table.insert(moving, { obj = obj, tokenType = tokenType })
                 needed[tokenType] = needed[tokenType] - 1
             end
-        end)
+        end
     end
     for tokenType, left in pairs(needed) do
         if left > 0 then
@@ -1821,6 +1821,7 @@ local function tryPayShownCosts(color)
     for _, item in ipairs(moving) do
         item.obj.setPositionSmooth(CONFIG.TOKEN_POSITIONS[item.tokenType], false, false)
     end
+    tokenZone.LayoutZone.layout()
 
     lastAdjustedCosts[color] = nil
     if useMasterWild[color] then
