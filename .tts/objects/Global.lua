@@ -1636,7 +1636,7 @@ function onObjectLeaveZone(zone, object)
 end
 
 -- ============================================================================
--- Hover: purchasable card catch costs
+-- Hover: catchable card catch costs
 -- ============================================================================
 
 local function cardInPlayerHand(object, color)
@@ -1649,7 +1649,7 @@ local function cardInPlayerHand(object, color)
     return false
 end
 
-local function isPurchasableCard(object, color)
+local function isCatchableCard(object, color)
     if not alive(object) or object.type ~= "Card" then
         return false
     end
@@ -1679,7 +1679,7 @@ local function applyCatchCostsFromEntry(color, entry)
 end
 
 function onObjectHover(player_color, hovered_object)
-    if not isPurchasableCard(hovered_object, player_color) then
+    if not isCatchableCard(hovered_object, player_color) then
         return
     end
     if costTexts[player_color] == nil then
