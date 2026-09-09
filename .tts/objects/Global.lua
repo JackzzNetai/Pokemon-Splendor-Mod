@@ -10,11 +10,12 @@ local CONSTANTS = {
     STATS_TEXT_FONT_COLOR = {1, 1, 1},
     STATS_TEXT_FONT_COLOR_AFFORDABLE = {0, 0.75, 0},
     STATS_TEXT_FONT_COLOR_SHORT = {1, 0.2, 0.2},
+    STATS_TEXT_FONT_COLOR_USE_MASTER_ON = {1, 0.82, 0.2},
     STATS_BUTTON_COLOR = {0.18, 0.18, 0.22},
 
     STATS_TEXT_FONT_SIZE = {
         DISCOUNT = 60,
-        COST_RESOURCE = 90,
+        COST_TOKEN = 90,
         VP = 100,
         BUTTON_LABEL = 30
     },
@@ -32,11 +33,11 @@ local CONSTANTS = {
         masterball = -0.30548
     },
     STATS_TEXT_VP_X = -0.43,
-    STATS_TEXT_COST_RESOURCE_X_DELTA = 0.035,
+    STATS_TEXT_COST_TOKEN_X_DELTA = 0.035,
     STATS_TEXT_Y = 0.51,
     STATS_TEXT_Z = {
         DISCOUNT = 0.05,
-        COST_RESOURCE = -0.15
+        COST_TOKEN = -0.15
     },
     STATS_ICON_Y = 27,
     STATS_BUTTON_LABEL_Z_DELTA = 0.047,
@@ -157,18 +158,18 @@ CONFIG = {
         includeMasterball = false
     },
     COST_DISPLAY = {
-        fontSize = CONSTANTS.STATS_TEXT_FONT_SIZE.COST_RESOURCE,
-        z = CONSTANTS.STATS_TEXT_Z.COST_RESOURCE,
-        xDelta = -CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA
+        fontSize = CONSTANTS.STATS_TEXT_FONT_SIZE.COST_TOKEN,
+        z = CONSTANTS.STATS_TEXT_Z.COST_TOKEN,
+        xDelta = -CONSTANTS.STATS_TEXT_COST_TOKEN_X_DELTA
     },
-    RESOURCE_DISPLAY = {
-        fontSize = CONSTANTS.STATS_TEXT_FONT_SIZE.COST_RESOURCE,
-        z = CONSTANTS.STATS_TEXT_Z.COST_RESOURCE,
-        xDelta = CONSTANTS.STATS_TEXT_COST_RESOURCE_X_DELTA
+    TOKEN_DISPLAY = {
+        fontSize = CONSTANTS.STATS_TEXT_FONT_SIZE.COST_TOKEN,
+        z = CONSTANTS.STATS_TEXT_Z.COST_TOKEN,
+        xDelta = CONSTANTS.STATS_TEXT_COST_TOKEN_X_DELTA
     },
     SLASH_DISPLAY = {
-        fontSize = CONSTANTS.STATS_TEXT_FONT_SIZE.COST_RESOURCE,
-        z = CONSTANTS.STATS_TEXT_Z.COST_RESOURCE
+        fontSize = CONSTANTS.STATS_TEXT_FONT_SIZE.COST_TOKEN,
+        z = CONSTANTS.STATS_TEXT_Z.COST_TOKEN
     },
     VP_DISPLAY = {
         fontSize = CONSTANTS.STATS_TEXT_FONT_SIZE.VP,
@@ -1022,6 +1023,7 @@ end
 -- Player card discount / VP (five Layout Zones per color, joined)
 -- ============================================================================
 
+-- Token types used by emptyBallCounts and per-ball loops.
 local BALL_TYPES = {
     pokeball   = true,
     greatball  = true,
@@ -1031,26 +1033,34 @@ local BALL_TYPES = {
     masterball = true
 }
 
+-- Wiped by clearBallState.
 local playerBalls = {}
+-- Wiped by clearCardState.
 local playerDiscounts = {}
 local playerVp = {}
 local playerCards = {}
 local evolveTargets = {} -- [color][target(truncated)] = source.evolution_cost
+-- Wiped by clearHoverCosts.
 local lastAdjustedCosts = {}
+local useMasterWild = {}
+-- Zone GUID → owner color.
 local ballsZoneGuidToColor = {}
 local cardsZoneGuidToColor = {}
 local matGuidToColor = {}
+-- Spawned stats number 3DTexts.
 local discountTexts = {}
 local costTexts = {}
-local resourceTexts = {}
+local tokenTexts = {}
 local slashTexts = {}
 local vpTexts = {}
+-- Spawned button-label 3DTexts.
 local evoHintTexts = {}
 local payTexts = {}
 local useMasterTexts = {}
+-- Tags for those 3DTexts (clear/find by tag).
 local DISCOUNT_TEXT_TAG = "stats_discount_text"
 local COST_TEXT_TAG = "stats_cost_text"
-local RESOURCE_TEXT_TAG = "stats_resource_text"
+local TOKEN_TEXT_TAG = "stats_token_text"
 local SLASH_TEXT_TAG = "stats_slash_text"
 local VP_TEXT_TAG = "stats_vp_text"
 local EVO_HINT_TEXT_TAG = "stats_evo_hint_text"
@@ -1063,6 +1073,43 @@ local function emptyBallCounts()
         counts[ballType] = 0
     end
     return counts
+end
+
+local function clearHoverCosts()
+    lastAdjustedCosts = {}  -- Same as looping lastAdjustedCosts[color] = nil
+    useMasterWild = {}  -- Practically same as looping useMasterWild[color] = false
+    for _, obj in pairs(useMasterTexts) do
+        if obj ~= nil and not obj.isDestroyed() then
+            obj.TextTool.setFontColor(CONSTANTS.STATS_TEXT_FONT_COLOR)
+        end
+    end
+end
+
+local function clearCardState()
+    for color, _ in pairs(CONFIG.PLAYER_ZONES) do
+        playerDiscounts[color] = emptyBallCounts()
+        playerVp[color] = 0
+        playerCards[color] = {}
+        evolveTargets[color] = {}
+    end
+end
+
+local function clearBallState()
+    for color, _ in pairs(CONFIG.PLAYER_ZONES) do
+        playerBalls[color] = emptyBallCounts()
+    end
+end
+
+local function setUseMasterWild(color, on)
+    useMasterWild[color] = on
+    local obj = useMasterTexts[color]
+    if obj ~= nil and not obj.isDestroyed() then
+        if on then
+            obj.TextTool.setFontColor(CONSTANTS.STATS_TEXT_FONT_COLOR_USE_MASTER_ON)
+        else
+            obj.TextTool.setFontColor(CONSTANTS.STATS_TEXT_FONT_COLOR)
+        end
+    end
 end
 
 local function hasGuid(guid)
@@ -1174,7 +1221,25 @@ local function setCostDisplay(color, ballType)
         obj.TextTool.setFontColor(CONSTANTS.STATS_TEXT_FONT_COLOR)
         return
     end
-    local shown = displayedCost(adjusted[ballType])
+    local shown
+    if useMasterWild[color] then
+        local tokens = playerBalls[color]
+        if ballType == "masterball" then
+            shown = displayedCost(adjusted.masterball)
+            for t, _ in pairs(BALL_TYPES) do
+                if t ~= "masterball" then
+                    local overflow = displayedCost(adjusted[t]) - tokens[t]
+                    if overflow > 0 then
+                        shown = shown + overflow
+                    end
+                end
+            end
+        else
+            shown = math.min(displayedCost(adjusted[ballType]), tokens[ballType])
+        end
+    else
+        shown = displayedCost(adjusted[ballType])
+    end
     obj.TextTool.setValue(tostring(shown))
     if shown <= playerBalls[color][ballType] then
         obj.TextTool.setFontColor(CONSTANTS.STATS_TEXT_FONT_COLOR_AFFORDABLE)
@@ -1211,14 +1276,18 @@ local function applyClampedDelta(current, delta, warning)
     return nextCount
 end
 
+local function ensurePlayerBallState(color)
+    if playerBalls[color] == nil then
+        playerBalls[color] = emptyBallCounts()
+    end
+end
+
 local function applyBallDelta(color, object, sign)
     local ballType = ballTypeOf(object)
     if ballType == nil then
         return
     end
-    if playerBalls[color] == nil then
-        playerBalls[color] = emptyBallCounts()
-    end
+    ensurePlayerBallState(color)
     local counts = playerBalls[color]
     local nextCount = applyClampedDelta(
         counts[ballType],
@@ -1226,24 +1295,26 @@ local function applyBallDelta(color, object, sign)
         "Warning: " .. color .. " " .. ballType .. " count would go negative; clamped to 0."
     )
     counts[ballType] = nextCount
-    setDisplayTextValue(resourceTexts, color, ballType, nextCount)
+    setDisplayTextValue(tokenTexts, color, ballType, nextCount)
     local remembered = lastAdjustedCosts[color]
     if remembered ~= nil then
         setCostDisplay(color, ballType)
+        if useMasterWild[color] and ballType ~= "masterball" then
+            setCostDisplay(color, "masterball")
+        end
     end
 end
 
 local function initPlayerBallsFromZones()
-    playerBalls = {}
+    clearBallState()
     for color, zones in pairs(CONFIG.PLAYER_ZONES) do
-        local counts = emptyBallCounts()
+        local counts = playerBalls[color]
         forEachZoneObject(zones.balls, function(obj)
             local ballType = ballTypeOf(obj)
             if ballType ~= nil then
                 counts[ballType] = counts[ballType] + 1
             end
         end)
-        playerBalls[color] = counts
     end
 end
 
@@ -1297,11 +1368,6 @@ local function applyCardDelta(color, object, sign)
         )
         discounts[ballType] = nextCount
         setDisplayTextValue(discountTexts, color, ballType, -nextCount)
-        local remembered = lastAdjustedCosts[color]
-        if remembered ~= nil then
-            remembered[ballType] = remembered[ballType] - sign * amount
-            setCostDisplay(color, ballType)
-        end
     end
 
     local nextVp = applyClampedDelta(
@@ -1358,15 +1424,9 @@ local function applyCardDelta(color, object, sign)
 end
 
 local function initPlayerCardsFromZones()
-    playerDiscounts = {}
-    playerVp = {}
-    playerCards = {}
-    evolveTargets = {}
-    lastAdjustedCosts = {}
+    clearCardState()
 
     for color, zones in pairs(CONFIG.PLAYER_ZONES) do
-        ensurePlayerCardState(color)
-        lastAdjustedCosts[color] = nil
         if zones.cards ~= nil then
             for _, guid in ipairs(zones.cards) do
                 forEachZoneObject(guid, function(obj)
@@ -1474,12 +1534,12 @@ end
 local function spawnStatsTexts()
     clearTaggedTexts(DISCOUNT_TEXT_TAG)
     clearTaggedTexts(COST_TEXT_TAG)
-    clearTaggedTexts(RESOURCE_TEXT_TAG)
+    clearTaggedTexts(TOKEN_TEXT_TAG)
     clearTaggedTexts(SLASH_TEXT_TAG)
     clearTaggedTexts(VP_TEXT_TAG)
     discountTexts = {}
     costTexts = {}
-    resourceTexts = {}
+    tokenTexts = {}
     slashTexts = {}
     vpTexts = {}
 
@@ -1489,7 +1549,7 @@ local function spawnStatsTexts()
     spawnDisplayTexts(CONFIG.COST_DISPLAY, COST_TEXT_TAG, costTexts, function()
         return 0
     end)
-    spawnDisplayTexts(CONFIG.RESOURCE_DISPLAY, RESOURCE_TEXT_TAG, resourceTexts, function(color, ballType)
+    spawnDisplayTexts(CONFIG.TOKEN_DISPLAY, TOKEN_TEXT_TAG, tokenTexts, function(color, ballType)
         return countOrZero(playerBalls, color, ballType)
     end)
     spawnDisplayTexts(CONFIG.SLASH_DISPLAY, SLASH_TEXT_TAG, slashTexts, function()
@@ -1581,6 +1641,15 @@ function onPayClicked(obj, playerColor, isAltClick)
 end
 
 function onUseMasterClicked(obj, playerColor, isAltClick)
+    if obj == nil or obj.isDestroyed() then
+        return
+    end
+    local color = matGuidToColor[obj.getGUID()]
+    if color == nil then
+        return
+    end
+    setUseMasterWild(color, not useMasterWild[color])
+    writeCostDisplays(color)
 end
 
 local function addStatsMatButton(mat, cfg, clickFunction)
@@ -1643,15 +1712,12 @@ local function spawnStatsMatButtons()
 end
 
 function clearPlayerStats()
+    clearHoverCosts()
+    clearCardState()
+    clearBallState()
     for color, _ in pairs(CONFIG.PLAYER_ZONES) do
-        playerBalls[color] = emptyBallCounts()
-        playerDiscounts[color] = emptyBallCounts()
-        playerVp[color] = 0
-        playerCards[color] = {}
-        evolveTargets[color] = {}
-        lastAdjustedCosts[color] = nil
         for ballType, _ in pairs(BALL_TYPES) do
-            setDisplayTextValue(resourceTexts, color, ballType, 0)
+            setDisplayTextValue(tokenTexts, color, ballType, 0)
             setDisplayTextValue(discountTexts, color, ballType, 0)
             setCostDisplay(color, ballType) -- writes "0" and forces white font color
         end
@@ -1736,6 +1802,7 @@ function onLoad()
     registerTokenUiAssets()
     applyStatsMatIconOffsets()
     buildPlayerZoneIndexes()
+    clearHoverCosts()
     initPlayerBallsFromZones()
     initPlayerCardsFromZones()
     spawnStatsTexts()
@@ -1784,9 +1851,7 @@ local function applyCatchCostsFromEntry(color, entry)
         return
     end
     ensurePlayerCardState(color)
-    if playerBalls[color] == nil then
-        playerBalls[color] = emptyBallCounts()
-    end
+    ensurePlayerBallState(color)
     local catch = entry.catch_cost or {}
     local discounts = playerDiscounts[color]
     local adjusted = {}
