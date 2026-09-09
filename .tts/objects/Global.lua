@@ -6,11 +6,11 @@
 -- ==============================================================================
 
 local CONSTANTS = {
-    WARN_ORANGE_COLOR = {1, 0.6, 0},
-    STATS_TEXT_FONT_COLOR = {1, 1, 1},
-    STATS_TEXT_FONT_COLOR_AFFORDABLE = {0, 0.75, 0},
-    STATS_TEXT_FONT_COLOR_SHORT = {1, 0.2, 0.2},
-    STATS_TEXT_FONT_COLOR_USE_MASTER_ON = {1, 0.82, 0.2},
+    COLOR_ORANGE = {1, 0.6, 0},
+    COLOR_WHITE = {1, 1, 1},
+    COLOR_GREEN = {0, 0.75, 0},
+    COLOR_RED = {1, 0.2, 0.2},
+    COLOR_GOLD = {1, 0.82, 0.2},
     STATS_BUTTON_COLOR = {0.18, 0.18, 0.22},
 
     STATS_TEXT_FONT_SIZE = {
@@ -1080,7 +1080,7 @@ local function clearHoverCosts()
     useMasterWild = {}  -- Practically same as looping useMasterWild[color] = false
     for _, obj in pairs(useMasterTexts) do
         if obj ~= nil and not obj.isDestroyed() then
-            obj.TextTool.setFontColor(CONSTANTS.STATS_TEXT_FONT_COLOR)
+            obj.TextTool.setFontColor(CONSTANTS.COLOR_WHITE)
         end
     end
 end
@@ -1105,9 +1105,9 @@ local function setUseMasterWild(color, on)
     local obj = useMasterTexts[color]
     if obj ~= nil and not obj.isDestroyed() then
         if on then
-            obj.TextTool.setFontColor(CONSTANTS.STATS_TEXT_FONT_COLOR_USE_MASTER_ON)
+            obj.TextTool.setFontColor(CONSTANTS.COLOR_GOLD)
         else
-            obj.TextTool.setFontColor(CONSTANTS.STATS_TEXT_FONT_COLOR)
+            obj.TextTool.setFontColor(CONSTANTS.COLOR_WHITE)
         end
     end
 end
@@ -1177,7 +1177,7 @@ local function resolveCard(object, color)
         printToAll(
             "Warning: " .. tostring(color) .. " card GM note '" .. tostring(id)
                 .. "' (GUID " .. object.getGUID() .. ") not in CARD_DATABASE.",
-            CONSTANTS.WARN_ORANGE_COLOR
+            CONSTANTS.COLOR_ORANGE
         )
         return nil, nil
     end
@@ -1239,15 +1239,15 @@ local function setCostDisplay(color, ballType)
     local adjusted = lastAdjustedCosts[color]
     if adjusted == nil then
         obj.TextTool.setValue("0")
-        obj.TextTool.setFontColor(CONSTANTS.STATS_TEXT_FONT_COLOR)
+        obj.TextTool.setFontColor(CONSTANTS.COLOR_WHITE)
         return
     end
     local shown = shownCatchCost(color, ballType)
     obj.TextTool.setValue(tostring(shown))
     if shown <= playerBalls[color][ballType] then
-        obj.TextTool.setFontColor(CONSTANTS.STATS_TEXT_FONT_COLOR_AFFORDABLE)
+        obj.TextTool.setFontColor(CONSTANTS.COLOR_GREEN)
     else
-        obj.TextTool.setFontColor(CONSTANTS.STATS_TEXT_FONT_COLOR_SHORT)
+        obj.TextTool.setFontColor(CONSTANTS.COLOR_RED)
     end
 end
 
@@ -1273,7 +1273,7 @@ end
 local function applyClampedDelta(current, delta, warning)
     local nextCount = current + delta
     if nextCount < 0 then
-        printToAll(warning, CONSTANTS.WARN_ORANGE_COLOR)
+        printToAll(warning, CONSTANTS.COLOR_ORANGE)
         return 0
     end
     return nextCount
@@ -1396,7 +1396,7 @@ local function applyCardDelta(color, object, sign)
                     printToAll(
                         "Warning: " .. tostring(color) .. " card GM note '" .. sourceId
                             .. "' not in CARD_DATABASE.",
-                        CONSTANTS.WARN_ORANGE_COLOR
+                        CONSTANTS.COLOR_ORANGE
                     )
                 else
                     targets[target] = sourceEntry.evolution_cost
@@ -1409,7 +1409,7 @@ local function applyCardDelta(color, object, sign)
             printToAll(
                 "Warning: " .. tostring(color) .. " card '" .. tostring(key)
                     .. "' left a layout zone but was not in playerCards.",
-                CONSTANTS.WARN_ORANGE_COLOR
+                CONSTANTS.COLOR_ORANGE
             )
         else
             count = count - 1
@@ -1459,7 +1459,7 @@ end
 local function configureStatsText(obj, cfg, tag, value)
     obj.TextTool.setValue(tostring(value))
     obj.TextTool.setFontSize(cfg.fontSize)
-    obj.TextTool.setFontColor(CONSTANTS.STATS_TEXT_FONT_COLOR)
+    obj.TextTool.setFontColor(CONSTANTS.COLOR_WHITE)
     obj.addTag(tag)
     obj.setLock(true)
     obj.interactable = false
@@ -1602,7 +1602,7 @@ local function pingEvoHintCards(color, player, cards, accept)
             printToAll(
                 "Warning: " .. tostring(color) .. " card has empty GM note (GUID "
                     .. card.getGUID() .. "); not in CARD_DATABASE.",
-                CONSTANTS.WARN_ORANGE_COLOR
+                CONSTANTS.COLOR_ORANGE
             )
         elseif accept(truncatedCardId(id)) then
             player.pingTable(card.getPosition())
@@ -1653,7 +1653,7 @@ local function tryPayShownCosts(color)
         if amount > tokens[ballType] then
             local player = Player[color]
             if player ~= nil then
-                player.broadcast("精灵球不足", CONSTANTS.STATS_TEXT_FONT_COLOR_SHORT)
+                player.broadcast("精灵球不足", CONSTANTS.COLOR_RED)
             end
             return
         end
@@ -1680,7 +1680,7 @@ local function tryPayShownCosts(color)
                 "Warning: " .. color .. " " .. ballType
                     .. " zone cannot supply payment; needed "
                     .. tostring(pay[ballType]) .. ".",
-                CONSTANTS.WARN_ORANGE_COLOR
+                CONSTANTS.COLOR_ORANGE
             )
             return
         end
@@ -1942,7 +1942,7 @@ function onObjectHover(player_color, hovered_object)
         printToAll(
             "Warning: " .. tostring(player_color) .. " card has empty GM note (GUID "
                 .. hovered_object.getGUID() .. "); not in CARD_DATABASE.",
-            CONSTANTS.WARN_ORANGE_COLOR
+            CONSTANTS.COLOR_ORANGE
         )
         return
     end
@@ -1951,7 +1951,7 @@ function onObjectHover(player_color, hovered_object)
         printToAll(
             "Warning: " .. tostring(player_color) .. " card GM note '" .. tostring(id)
                 .. "' (GUID " .. hovered_object.getGUID() .. ") not in CARD_DATABASE.",
-            CONSTANTS.WARN_ORANGE_COLOR
+            CONSTANTS.COLOR_ORANGE
         )
         return
     end
