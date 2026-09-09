@@ -740,6 +740,56 @@ function getVp(parts)
 end
 
 -- ============================================================================
+-- Shared utils
+-- ============================================================================
+
+local function alive(obj)
+    return obj ~= nil and not obj.isDestroyed()
+end
+
+local function warnOrange(message)
+    printToAll(message, CONSTANTS.COLOR_ORANGE)
+end
+
+local function posXYZ(position)
+    return position[1] or position.x, position[2] or position.y, position[3] or position.z
+end
+
+local function firstTag(object)
+    local tags = object.getTags()
+    if tags == nil then
+        return nil
+    end
+    return tags[1]
+end
+
+local function hasGuid(guid)
+    return guid ~= nil and guid ~= ""
+end
+
+-- True if pos.x/z is inside zone {xMin,xMax,zMin,zMax}.
+-- Also accepts {pos=, zone=} so object scripts can Global.call this.
+function inXZZone(pos, zone)
+    if zone == nil then
+        zone = pos.zone
+        pos = pos.pos
+    end
+    return pos.x >= zone.xMin and pos.x <= zone.xMax
+       and pos.z >= zone.zMin and pos.z <= zone.zMax
+end
+
+local function handCards(player)
+    if player == nil or player.getHandCount() < 1 then
+        return {}
+    end
+    local hand = player.getHandObjects()
+    if hand == nil then
+        return {}
+    end
+    return hand
+end
+
+-- ============================================================================
 -- Market refill (stage rows + rare/legendary piles) — raycast occupancy
 -- ============================================================================
 
@@ -751,17 +801,6 @@ local SNAP_SETTLE_SECONDS = 0.1
 -- Skipping false→true in onLoad: no player input there, and onLoad only reads/configures.
 gameInitialized = true
 local pendingTakes = {}
-
-function setGameInitialized(value)
-    gameInitialized = value and true or false
-    if not gameInitialized then
-        pendingTakes = {}
-    end
-end
-
-local function posXYZ(position)
-    return position[1] or position.x, position[2] or position.y, position[3] or position.z
-end
 
 local function castDownAt(position)
     local x, y, z = posXYZ(position)
@@ -778,7 +817,7 @@ local function faceUpCardObjectAt(position)
     local hits = castDownAt(position)
     for _, hit in ipairs(hits) do
         local obj = hit.hit_object
-        if obj ~= nil and not obj.isDestroyed() and obj.type == "Card" and not obj.is_face_down then
+        if alive(obj) and obj.type == "Card" and not obj.is_face_down then
             return obj
         end
     end
@@ -786,14 +825,14 @@ local function faceUpCardObjectAt(position)
 end
 
 local function objectAt(position, object)
-    if object == nil or object.isDestroyed() then
+    if not alive(object) then
         return false
     end
     local guid = object.getGUID()
     local hits = castDownAt(position)
     for _, hit in ipairs(hits) do
         local obj = hit.hit_object
-        if obj ~= nil and not obj.isDestroyed() and obj.getGUID() == guid then
+        if alive(obj) and obj.getGUID() == guid then
             return true
         end
     end
@@ -804,7 +843,7 @@ local function deckSourceAt(position)
     local hits = castDownAt(position)
     for _, hit in ipairs(hits) do
         local obj = hit.hit_object
-        if obj ~= nil and not obj.isDestroyed() then
+        if alive(obj) then
             if obj.type == "Deck" then
                 return obj
             end
@@ -835,59 +874,29 @@ local function getPileRevealPosition(tier)
     }
 end
 
-local function firstTag(object)
-    local tags = object.getTags()
-    if tags == nil then
-        return nil
-    end
-    return tags[1]
-end
-
--- True if pos.x/z is inside zone {xMin,xMax,zMin,zMax}.
--- Also accepts {pos=, zone=} so object scripts can Global.call this.
-function inXZZone(pos, zone)
-    if zone == nil then
-        zone = pos.zone
-        pos = pos.pos
-    end
-    return pos.x >= zone.xMin and pos.x <= zone.xMax
-       and pos.z >= zone.zMin and pos.z <= zone.zMax
-end
-
-local function findRowSlot(object)
-    if object == nil or object.isDestroyed() then
-        return nil
-    end
-    local tier = firstTag(object)
-    if not STAGE_TIERS[tier] then
+-- Row first (stage), then pile (rare/legendary). Same priority as findRowSlot then findPileFaceUp.
+local function findMarketTake(object)
+    if not alive(object) then
         return nil
     end
     -- Safe at pickup: a card cannot leave MARKET_ZONE in the same instant it is picked up.
     if not inXZZone(object.getPosition(), CONFIG.MARKET_ZONE) then
         return nil
     end
-    for i = 0, SLOT_COUNT - 1 do
-        local slotPos = getSlotPosition(tier, i)
-        if objectAt(slotPos, object) then
-            return { kind = "row", tier = tier, slotIndex = i, position = slotPos }
+    local tier = firstTag(object)
+    if STAGE_TIERS[tier] then
+        for i = 0, SLOT_COUNT - 1 do
+            local slotPos = getSlotPosition(tier, i)
+            if objectAt(slotPos, object) then
+                return { kind = "row", tier = tier, slotIndex = i, position = slotPos }
+            end
         end
-    end
-    return nil
-end
-
-local function findPileFaceUp(object)
-    if object == nil or object.isDestroyed() then
         return nil
     end
     if object.is_face_down then
         return nil
     end
-    local tier = firstTag(object)
     if not NON_STAGE_TIERS[tier] then
-        return nil
-    end
-    -- Safe at pickup: a card cannot leave MARKET_ZONE in the same instant it is picked up.
-    if not inXZZone(object.getPosition(), CONFIG.MARKET_ZONE) then
         return nil
     end
     local pilePos = getPileRevealPosition(tier)
@@ -901,14 +910,10 @@ local function findTierDeck(tier)
     return deckSourceAt(CONFIG.DECK_POSITIONS[tier])
 end
 
-local function refillSlot(tier, slotIndex)
-    local deck = findTierDeck(tier)
-    if deck == nil or deck.isDestroyed() then
+local function takeFromDeckTo(deck, dest)
+    if not alive(deck) then
         return
     end
-
-    local slotPos = getSlotPosition(tier, slotIndex)
-
     if deck.type == "Deck" then
         if deck.getQuantity() < 1 then
             return
@@ -916,55 +921,35 @@ local function refillSlot(tier, slotIndex)
         local card = deck.takeObject()
         if card then
             card.flip()
-            card.setPositionSmooth(slotPos, false, false)
+            card.setPositionSmooth(dest, false, false)
         end
     else
         if deck.is_face_down then
             deck.flip()
         end
-        deck.setPositionSmooth(slotPos, false, false)
+        deck.setPositionSmooth(dest, false, false)
     end
 end
 
+local function refillSlot(tier, slotIndex)
+    takeFromDeckTo(findTierDeck(tier), getSlotPosition(tier, slotIndex))
+end
+
 local function revealPileTop(tier)
-    local deck = findTierDeck(tier)
-    if deck == nil or deck.isDestroyed() then
-        return
-    end
-
-    local revealPos = getPileRevealPosition(tier)
-
-    if deck.type == "Deck" then
-        if deck.getQuantity() < 1 then
-            return
-        end
-        local card = deck.takeObject()
-        if card then
-            card.flip()
-            card.setPositionSmooth(revealPos, false, false)
-        end
-    else
-        if deck.is_face_down then
-            deck.flip()
-        end
-        deck.setPositionSmooth(revealPos, false, false)
-    end
+    takeFromDeckTo(findTierDeck(tier), getPileRevealPosition(tier))
 end
 
 function onObjectPickUp(player_color, object)
     if not gameInitialized then
         return
     end
-    if object == nil or object.isDestroyed() then
+    if not alive(object) then
         return
     end
     if object.type ~= "Card" then
         return
     end
-    local pending = findRowSlot(object)
-    if pending == nil then
-        pending = findPileFaceUp(object)
-    end
+    local pending = findMarketTake(object)
     if pending == nil then
         return
     end
@@ -972,7 +957,7 @@ function onObjectPickUp(player_color, object)
 end
 
 function onObjectDrop(player_color, object)
-    if object == nil or object.isDestroyed() then
+    if not alive(object) then
         return
     end
     local guid = object.getGUID()
@@ -1079,7 +1064,7 @@ local function clearHoverCosts()
     lastAdjustedCosts = {}  -- Same as looping lastAdjustedCosts[color] = nil
     useMasterWild = {}  -- Practically same as looping useMasterWild[color] = false
     for _, obj in pairs(useMasterTexts) do
-        if obj ~= nil and not obj.isDestroyed() then
+        if alive(obj) then
             obj.TextTool.setFontColor(CONSTANTS.COLOR_WHITE)
         end
     end
@@ -1103,7 +1088,7 @@ end
 local function setUseMasterWild(color, on)
     useMasterWild[color] = on
     local obj = useMasterTexts[color]
-    if obj ~= nil and not obj.isDestroyed() then
+    if alive(obj) then
         if on then
             obj.TextTool.setFontColor(CONSTANTS.COLOR_GOLD)
         else
@@ -1112,12 +1097,15 @@ local function setUseMasterWild(color, on)
     end
 end
 
-local function hasGuid(guid)
-    return guid ~= nil and guid ~= ""
+local function matOwnerColor(obj)
+    if not alive(obj) then
+        return nil
+    end
+    return matGuidToColor[obj.getGUID()]
 end
 
 local function ballTypeOf(object)
-    if object == nil or object.isDestroyed() then
+    if not alive(object) then
         return nil
     end
     local tag = firstTag(object)
@@ -1163,9 +1151,16 @@ local function forEachZoneObject(guid, fn)
     end
 end
 
+local function warnMissingCardDatabase(color, id, object)
+    warnOrange(
+        "Warning: " .. tostring(color) .. " card GM note '" .. tostring(id)
+            .. "' (GUID " .. object.getGUID() .. ") not in CARD_DATABASE."
+    )
+end
+
 -- Returns id, entry; or nil, nil (silent skip / warned miss).
 local function resolveCard(object, color)
-    if object == nil or object.isDestroyed() then
+    if not alive(object) then
         return nil, nil
     end
     local id = object.getGMNotes()
@@ -1174,18 +1169,14 @@ local function resolveCard(object, color)
     end
     local entry = CARD_DATABASE[id]
     if entry == nil then
-        printToAll(
-            "Warning: " .. tostring(color) .. " card GM note '" .. tostring(id)
-                .. "' (GUID " .. object.getGUID() .. ") not in CARD_DATABASE.",
-            CONSTANTS.COLOR_ORANGE
-        )
+        warnMissingCardDatabase(color, id, object)
         return nil, nil
     end
     return id, entry
 end
 
 local function setTextToolValue(obj, value)
-    if obj == nil or obj.isDestroyed() then
+    if not alive(obj) then
         return
     end
     obj.TextTool.setValue(tostring(value))
@@ -1200,10 +1191,7 @@ local function setDisplayTextValue(store, color, ballType, count)
 end
 
 local function displayedCost(raw)
-    if raw < 0 then
-        return 0
-    end
-    return raw
+    return math.max(0, raw)
 end
 
 local function shownCatchCost(color, ballType)
@@ -1233,7 +1221,7 @@ local function setCostDisplay(color, ballType)
         return
     end
     local obj = byColor[ballType]
-    if obj == nil or obj.isDestroyed() then
+    if not alive(obj) then
         return
     end
     local adjusted = lastAdjustedCosts[color]
@@ -1273,7 +1261,7 @@ end
 local function applyClampedDelta(current, delta, warning)
     local nextCount = current + delta
     if nextCount < 0 then
-        printToAll(warning, CONSTANTS.COLOR_ORANGE)
+        warnOrange(warning)
         return 0
     end
     return nextCount
@@ -1393,10 +1381,9 @@ local function applyCardDelta(color, object, sign)
                 local sourceId = key .. "_1"
                 local sourceEntry = CARD_DATABASE[sourceId]
                 if sourceEntry == nil then
-                    printToAll(
+                    warnOrange(
                         "Warning: " .. tostring(color) .. " card GM note '" .. sourceId
-                            .. "' not in CARD_DATABASE.",
-                        CONSTANTS.COLOR_ORANGE
+                            .. "' not in CARD_DATABASE."
                     )
                 else
                     targets[target] = sourceEntry.evolution_cost
@@ -1406,10 +1393,9 @@ local function applyCardDelta(color, object, sign)
     else
         local count = cards[key]
         if count == nil then
-            printToAll(
+            warnOrange(
                 "Warning: " .. tostring(color) .. " card '" .. tostring(key)
-                    .. "' left a layout zone but was not in playerCards.",
-                CONSTANTS.COLOR_ORANGE
+                    .. "' left a layout zone but was not in playerCards."
             )
         else
             count = count - 1
@@ -1440,9 +1426,13 @@ local function initPlayerCardsFromZones()
     end
 end
 
+-- ============================================================================
+-- Stats 3DText spawn + mat buttons/labels
+-- ============================================================================
+
 local function clearTaggedTexts(tag)
     for _, obj in ipairs(getObjectsWithTag(tag)) do
-        if obj ~= nil and not obj.isDestroyed() then
+        if alive(obj) then
             obj.destruct()
         end
     end
@@ -1472,7 +1462,7 @@ local function spawnLockedText(mat, worldRot, offset, cfg, tag, value, onReady)
         rotation          = worldRot,
         sound             = false,
         callback_function = function(obj)
-            if obj == nil or obj.isDestroyed() then
+            if not alive(obj) then
                 return
             end
             configureStatsText(obj, cfg, tag, value)
@@ -1535,16 +1525,12 @@ local function spawnDisplayTexts(cfg, tag, store, valueFor)
 end
 
 local function spawnStatsTexts()
-    clearTaggedTexts(DISCOUNT_TEXT_TAG)
-    clearTaggedTexts(COST_TEXT_TAG)
-    clearTaggedTexts(TOKEN_TEXT_TAG)
-    clearTaggedTexts(SLASH_TEXT_TAG)
-    clearTaggedTexts(VP_TEXT_TAG)
-    discountTexts = {}
-    costTexts = {}
-    tokenTexts = {}
-    slashTexts = {}
-    vpTexts = {}
+    for _, tag in ipairs({
+        DISCOUNT_TEXT_TAG, COST_TEXT_TAG, TOKEN_TEXT_TAG, SLASH_TEXT_TAG, VP_TEXT_TAG
+    }) do
+        clearTaggedTexts(tag)
+    end
+    discountTexts, costTexts, tokenTexts, slashTexts, vpTexts = {}, {}, {}, {}, {}
 
     spawnDisplayTexts(CONFIG.DISCOUNT_DISPLAY, DISCOUNT_TEXT_TAG, discountTexts, function(color, ballType)
         return -countOrZero(playerDiscounts, color, ballType)
@@ -1563,6 +1549,162 @@ local function spawnStatsTexts()
     end)
 end
 
+local function addStatsMatButton(mat, cfg, clickFunction)
+    mat.createButton({
+        click_function = clickFunction,
+        function_owner = self,
+        position       = cfg.position,
+        width          = CONSTANTS.STATS_BUTTON_WIDTH,
+        height         = CONSTANTS.STATS_BUTTON_HEIGHT,
+        color          = CONSTANTS.STATS_BUTTON_COLOR
+    })
+end
+
+local function labelDisplayFromButton(buttonCfg)
+    local x, y, z = posXYZ(buttonCfg.position)
+    return {
+        fontSize = CONSTANTS.STATS_TEXT_FONT_SIZE.BUTTON_LABEL,
+        offset = { -x, y, z + CONSTANTS.STATS_BUTTON_LABEL_Z_DELTA }
+    }
+end
+
+local function spawnStatsMatLabels()
+    for _, tag in ipairs({EVO_HINT_TEXT_TAG, PAY_TEXT_TAG, USE_MASTER_TEXT_TAG}) do
+        clearTaggedTexts(tag)
+    end
+    evoHintTexts, payTexts, useMasterTexts = {}, {}, {}
+
+    local specs = {
+        { CONFIG.EVO_HINT_BUTTON, EVO_HINT_TEXT_TAG, evoHintTexts },
+        { CONFIG.PAY_BUTTON, PAY_TEXT_TAG, payTexts },
+        { CONFIG.USE_MASTER_BUTTON, USE_MASTER_TEXT_TAG, useMasterTexts }
+    }
+    for _, spec in ipairs(specs) do
+        local buttonCfg = spec[1]
+        spawnDisplayTexts(
+            labelDisplayFromButton(buttonCfg),
+            spec[2], spec[3],
+            function() return buttonCfg.label end
+        )
+    end
+end
+
+local function spawnStatsMatButtons()
+    for _, matGuid in pairs(CONFIG.STATS_MATS) do
+        if hasGuid(matGuid) then
+            local mat = getObjectFromGUID(matGuid)
+            if mat ~= nil then
+                mat.clearButtons()
+                addStatsMatButton(mat, CONFIG.EVO_HINT_BUTTON, "onEvoHintClicked")
+                addStatsMatButton(mat, CONFIG.PAY_BUTTON, "onPayClicked")
+                addStatsMatButton(mat, CONFIG.USE_MASTER_BUTTON, "onUseMasterClicked")
+            end
+        end
+    end
+    spawnStatsMatLabels()
+end
+
+-- ============================================================================
+-- Zone enter/leave → ball/card deltas
+-- ============================================================================
+
+local function handleZoneObject(zone, object, sign)
+    if not gameInitialized then
+        return
+    end
+    if zone == nil or object == nil then
+        return
+    end
+    local guid = zone.getGUID()
+    local ballColor = ballsZoneGuidToColor[guid]
+    if ballColor ~= nil then
+        applyBallDelta(ballColor, object, sign)
+        return
+    end
+    local cardColor = cardsZoneGuidToColor[guid]
+    if cardColor ~= nil then
+        applyCardDelta(cardColor, object, sign)
+    end
+end
+
+function onObjectEnterZone(zone, object)
+    handleZoneObject(zone, object, 1)
+end
+
+function onObjectLeaveZone(zone, object)
+    handleZoneObject(zone, object, -1)
+end
+
+-- ============================================================================
+-- Hover: purchasable card catch costs
+-- ============================================================================
+
+local function cardInPlayerHand(object, color)
+    local guid = object.getGUID()
+    for _, obj in ipairs(handCards(Player[color])) do
+        if alive(obj) and obj.getGUID() == guid then
+            return true
+        end
+    end
+    return false
+end
+
+local function isPurchasableCard(object, color)
+    if not alive(object) or object.type ~= "Card" then
+        return false
+    end
+    if cardInPlayerHand(object, color) then
+        return true
+    end
+    if object.is_face_down then
+        return false
+    end
+    return inXZZone(object.getPosition(), CONFIG.MARKET_ZONE)
+end
+
+local function applyCatchCostsFromEntry(color, entry)
+    if costTexts[color] == nil then
+        return
+    end
+    ensurePlayerCardState(color)
+    ensurePlayerBallState(color)
+    local catch = entry.catch_cost or {}
+    local discounts = playerDiscounts[color]
+    local adjusted = {}
+    for ballType, _ in pairs(BALL_TYPES) do
+        adjusted[ballType] = (catch[ballType] or 0) - discounts[ballType]
+    end
+    lastAdjustedCosts[color] = adjusted
+    writeCostDisplays(color)
+end
+
+function onObjectHover(player_color, hovered_object)
+    if not isPurchasableCard(hovered_object, player_color) then
+        return
+    end
+    if costTexts[player_color] == nil then
+        return
+    end
+    local id = hovered_object.getGMNotes()
+    if id == nil or id == "" then
+        warnOrange(
+            "Warning: " .. tostring(player_color) .. " card has empty GM note (GUID "
+                .. hovered_object.getGUID() .. "); not in CARD_DATABASE."
+        )
+        return
+    end
+    local entry = CARD_DATABASE[id]
+    if entry == nil then
+        warnMissingCardDatabase(player_color, id, hovered_object)
+        return
+    end
+    applyCatchCostsFromEntry(player_color, entry)
+end
+
+-- ============================================================================
+-- Mat-owner clicks: evo hint, pay, use-master
+-- ============================================================================
+
 local function collectEvoHintCandidates(player)
     local cards = {}
     for _, tier in ipairs({"stage2", "stage3"}) do
@@ -1573,14 +1715,9 @@ local function collectEvoHintCandidates(player)
             end
         end
     end
-    if player.getHandCount() >= 1 then
-        local hand = player.getHandObjects()
-        if hand ~= nil then
-            for _, card in ipairs(hand) do
-                if card ~= nil and card.type == "Card" then
-                    table.insert(cards, card)
-                end
-            end
+    for _, card in ipairs(handCards(player)) do
+        if alive(card) and card.type == "Card" then
+            table.insert(cards, card)
         end
     end
     return cards
@@ -1599,10 +1736,9 @@ local function pingEvoHintCards(color, player, cards, accept)
     for _, card in ipairs(cards) do
         local id = card.getGMNotes()
         if id == nil or id == "" then
-            printToAll(
+            warnOrange(
                 "Warning: " .. tostring(color) .. " card has empty GM note (GUID "
-                    .. card.getGUID() .. "); not in CARD_DATABASE.",
-                CONSTANTS.COLOR_ORANGE
+                    .. card.getGUID() .. "); not in CARD_DATABASE."
             )
         elseif accept(truncatedCardId(id)) then
             player.pingTable(card.getPosition())
@@ -1611,10 +1747,7 @@ local function pingEvoHintCards(color, player, cards, accept)
 end
 
 function onEvoHintClicked(obj, playerColor, isAltClick)
-    if obj == nil or obj.isDestroyed() then
-        return
-    end
-    local color = matGuidToColor[obj.getGUID()]
+    local color = matOwnerColor(obj)
     if color == nil then
         return
     end
@@ -1659,7 +1792,7 @@ local function tryPayShownCosts(color)
         end
     end
 
-    local needed = emptyBallCounts()
+    local needed = {}
     for ballType, amount in pairs(pay) do
         needed[ballType] = amount
     end
@@ -1676,11 +1809,10 @@ local function tryPayShownCosts(color)
     end
     for ballType, left in pairs(needed) do
         if left > 0 then
-            printToAll(
+            warnOrange(
                 "Warning: " .. color .. " " .. ballType
                     .. " zone cannot supply payment; needed "
-                    .. tostring(pay[ballType]) .. ".",
-                CONSTANTS.COLOR_ORANGE
+                    .. tostring(pay[ballType]) .. "."
             )
             return
         end
@@ -1698,10 +1830,7 @@ local function tryPayShownCosts(color)
 end
 
 function onPayClicked(obj, playerColor, isAltClick)
-    if obj == nil or obj.isDestroyed() then
-        return
-    end
-    local color = matGuidToColor[obj.getGUID()]
+    local color = matOwnerColor(obj)
     if color == nil then
         return
     end
@@ -1709,10 +1838,7 @@ function onPayClicked(obj, playerColor, isAltClick)
 end
 
 function onUseMasterClicked(obj, playerColor, isAltClick)
-    if obj == nil or obj.isDestroyed() then
-        return
-    end
-    local color = matGuidToColor[obj.getGUID()]
+    local color = matOwnerColor(obj)
     if color == nil then
         return
     end
@@ -1720,63 +1846,15 @@ function onUseMasterClicked(obj, playerColor, isAltClick)
     writeCostDisplays(color)
 end
 
-local function addStatsMatButton(mat, cfg, clickFunction)
-    mat.createButton({
-        click_function = clickFunction,
-        function_owner = self,
-        position       = cfg.position,
-        width          = CONSTANTS.STATS_BUTTON_WIDTH,
-        height         = CONSTANTS.STATS_BUTTON_HEIGHT,
-        color          = CONSTANTS.STATS_BUTTON_COLOR
-    })
-end
+-- ============================================================================
+-- onLoad / clearPlayerStats / setGameInitialized
+-- ============================================================================
 
-local function labelDisplayFromButton(buttonCfg)
-    local x, y, z = posXYZ(buttonCfg.position)
-    return {
-        fontSize = CONSTANTS.STATS_TEXT_FONT_SIZE.BUTTON_LABEL,
-        offset = { -x, y, z + CONSTANTS.STATS_BUTTON_LABEL_Z_DELTA }
-    }
-end
-
-local function spawnStatsMatLabels()
-    clearTaggedTexts(EVO_HINT_TEXT_TAG)
-    clearTaggedTexts(PAY_TEXT_TAG)
-    clearTaggedTexts(USE_MASTER_TEXT_TAG)
-    evoHintTexts = {}
-    payTexts = {}
-    useMasterTexts = {}
-
-    spawnDisplayTexts(
-        labelDisplayFromButton(CONFIG.EVO_HINT_BUTTON),
-        EVO_HINT_TEXT_TAG, evoHintTexts,
-        function() return CONFIG.EVO_HINT_BUTTON.label end
-    )
-    spawnDisplayTexts(
-        labelDisplayFromButton(CONFIG.PAY_BUTTON),
-        PAY_TEXT_TAG, payTexts,
-        function() return CONFIG.PAY_BUTTON.label end
-    )
-    spawnDisplayTexts(
-        labelDisplayFromButton(CONFIG.USE_MASTER_BUTTON),
-        USE_MASTER_TEXT_TAG, useMasterTexts,
-        function() return CONFIG.USE_MASTER_BUTTON.label end
-    )
-end
-
-local function spawnStatsMatButtons()
-    for _, matGuid in pairs(CONFIG.STATS_MATS) do
-        if hasGuid(matGuid) then
-            local mat = getObjectFromGUID(matGuid)
-            if mat ~= nil then
-                mat.clearButtons()
-                addStatsMatButton(mat, CONFIG.EVO_HINT_BUTTON, "onEvoHintClicked")
-                addStatsMatButton(mat, CONFIG.PAY_BUTTON, "onPayClicked")
-                addStatsMatButton(mat, CONFIG.USE_MASTER_BUTTON, "onUseMasterClicked")
-            end
-        end
+function setGameInitialized(value)
+    gameInitialized = value and true or false
+    if not gameInitialized then
+        pendingTakes = {}
     end
-    spawnStatsMatLabels()
 end
 
 function clearPlayerStats()
@@ -1791,33 +1869,6 @@ function clearPlayerStats()
         end
         setVpDisplayTextValue(color, 0)
     end
-end
-
-local function handleZoneObject(zone, object, sign)
-    if not gameInitialized then
-        return
-    end
-    if zone == nil or object == nil then
-        return
-    end
-    local guid = zone.getGUID()
-    local ballColor = ballsZoneGuidToColor[guid]
-    if ballColor ~= nil then
-        applyBallDelta(ballColor, object, sign)
-        return
-    end
-    local cardColor = cardsZoneGuidToColor[guid]
-    if cardColor ~= nil then
-        applyCardDelta(cardColor, object, sign)
-    end
-end
-
-function onObjectEnterZone(zone, object)
-    handleZoneObject(zone, object, 1)
-end
-
-function onObjectLeaveZone(zone, object)
-    handleZoneObject(zone, object, -1)
 end
 
 local function getTokenUiAssets()
@@ -1876,86 +1927,3 @@ function onLoad()
     spawnStatsTexts()
     spawnStatsMatButtons()
 end
-
-
--- ============================================================================
--- Hover: purchasable card catch costs
--- ============================================================================
-
-local function cardInPlayerHand(object, color)
-    local player = Player[color]
-    -- Unseated players have no hand zone; getHandObjects() would throw.
-    if player == nil or player.getHandCount() < 1 then
-        return false
-    end
-    local hand = player.getHandObjects()
-    if hand == nil then
-        return false
-    end
-    local guid = object.getGUID()
-    for _, obj in ipairs(hand) do
-        if obj ~= nil and not obj.isDestroyed() and obj.getGUID() == guid then
-            return true
-        end
-    end
-    return false
-end
-
-local function isPurchasableCard(object, color)
-    if object == nil or object.isDestroyed() or object.type ~= "Card" then
-        return false
-    end
-    if cardInPlayerHand(object, color) then
-        return true
-    end
-    if object.is_face_down then
-        return false
-    end
-    return inXZZone(object.getPosition(), CONFIG.MARKET_ZONE)
-end
-
-local function applyCatchCostsFromEntry(color, entry)
-    if costTexts[color] == nil then
-        return
-    end
-    ensurePlayerCardState(color)
-    ensurePlayerBallState(color)
-    local catch = entry.catch_cost or {}
-    local discounts = playerDiscounts[color]
-    local adjusted = {}
-    for ballType, _ in pairs(BALL_TYPES) do
-        adjusted[ballType] = (catch[ballType] or 0) - discounts[ballType]
-    end
-    lastAdjustedCosts[color] = adjusted
-    writeCostDisplays(color)
-end
-
-function onObjectHover(player_color, hovered_object)
-    if not isPurchasableCard(hovered_object, player_color) then
-        return
-    end
-    if costTexts[player_color] == nil then
-        return
-    end
-    local id = hovered_object.getGMNotes()
-    if id == nil or id == "" then
-        printToAll(
-            "Warning: " .. tostring(player_color) .. " card has empty GM note (GUID "
-                .. hovered_object.getGUID() .. "); not in CARD_DATABASE.",
-            CONSTANTS.COLOR_ORANGE
-        )
-        return
-    end
-    local entry = CARD_DATABASE[id]
-    if entry == nil then
-        printToAll(
-            "Warning: " .. tostring(player_color) .. " card GM note '" .. tostring(id)
-                .. "' (GUID " .. hovered_object.getGUID() .. ") not in CARD_DATABASE.",
-            CONSTANTS.COLOR_ORANGE
-        )
-        return
-    end
-    applyCatchCostsFromEntry(player_color, entry)
-end
-
--- ============================================================================
