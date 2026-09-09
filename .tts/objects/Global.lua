@@ -1206,6 +1206,27 @@ local function displayedCost(raw)
     return raw
 end
 
+local function shownCatchCost(color, ballType)
+    local adjusted = lastAdjustedCosts[color]
+    if useMasterWild[color] then
+        local tokens = playerBalls[color]
+        if ballType == "masterball" then
+            local shown = displayedCost(adjusted.masterball)
+            for t, _ in pairs(BALL_TYPES) do
+                if t ~= "masterball" then
+                    local overflow = displayedCost(adjusted[t]) - tokens[t]
+                    if overflow > 0 then
+                        shown = shown + overflow
+                    end
+                end
+            end
+            return shown
+        end
+        return math.min(displayedCost(adjusted[ballType]), tokens[ballType])
+    end
+    return displayedCost(adjusted[ballType])
+end
+
 local function setCostDisplay(color, ballType)
     local byColor = costTexts[color]
     if byColor == nil then
@@ -1221,25 +1242,7 @@ local function setCostDisplay(color, ballType)
         obj.TextTool.setFontColor(CONSTANTS.STATS_TEXT_FONT_COLOR)
         return
     end
-    local shown
-    if useMasterWild[color] then
-        local tokens = playerBalls[color]
-        if ballType == "masterball" then
-            shown = displayedCost(adjusted.masterball)
-            for t, _ in pairs(BALL_TYPES) do
-                if t ~= "masterball" then
-                    local overflow = displayedCost(adjusted[t]) - tokens[t]
-                    if overflow > 0 then
-                        shown = shown + overflow
-                    end
-                end
-            end
-        else
-            shown = math.min(displayedCost(adjusted[ballType]), tokens[ballType])
-        end
-    else
-        shown = displayedCost(adjusted[ballType])
-    end
+    local shown = shownCatchCost(color, ballType)
     obj.TextTool.setValue(tostring(shown))
     if shown <= playerBalls[color][ballType] then
         obj.TextTool.setFontColor(CONSTANTS.STATS_TEXT_FONT_COLOR_AFFORDABLE)
@@ -1637,7 +1640,72 @@ function onEvoHintClicked(obj, playerColor, isAltClick)
     pingEvoHintCards(color, player, collectEvoHintCandidates(player), accept)
 end
 
+local function tryPayShownCosts(color)
+    if lastAdjustedCosts[color] == nil then
+        return
+    end
+    ensurePlayerBallState(color)
+    local tokens = playerBalls[color]
+    local pay = {}
+    for ballType, _ in pairs(BALL_TYPES) do
+        local amount = shownCatchCost(color, ballType)
+        pay[ballType] = amount
+        if amount > tokens[ballType] then
+            local player = Player[color]
+            if player ~= nil then
+                player.broadcast("精灵球不足", CONSTANTS.STATS_TEXT_FONT_COLOR_SHORT)
+            end
+            return
+        end
+    end
+
+    local needed = emptyBallCounts()
+    for ballType, amount in pairs(pay) do
+        needed[ballType] = amount
+    end
+    local moving = {}
+    local zones = CONFIG.PLAYER_ZONES[color]
+    if zones ~= nil then
+        forEachZoneObject(zones.balls, function(obj)
+            local ballType = ballTypeOf(obj)
+            if ballType ~= nil and needed[ballType] > 0 then
+                table.insert(moving, { obj = obj, ballType = ballType })
+                needed[ballType] = needed[ballType] - 1
+            end
+        end)
+    end
+    for ballType, left in pairs(needed) do
+        if left > 0 then
+            printToAll(
+                "Warning: " .. color .. " " .. ballType
+                    .. " zone cannot supply payment; needed "
+                    .. tostring(pay[ballType]) .. ".",
+                CONSTANTS.WARN_ORANGE_COLOR
+            )
+            return
+        end
+    end
+
+    for _, item in ipairs(moving) do
+        item.obj.setPositionSmooth(CONFIG.TOKEN_POSITIONS[item.ballType], false, false)
+    end
+
+    lastAdjustedCosts[color] = nil
+    if useMasterWild[color] then
+        setUseMasterWild(color, false)
+    end
+    writeCostDisplays(color)
+end
+
 function onPayClicked(obj, playerColor, isAltClick)
+    if obj == nil or obj.isDestroyed() then
+        return
+    end
+    local color = matGuidToColor[obj.getGUID()]
+    if color == nil then
+        return
+    end
+    tryPayShownCosts(color)
 end
 
 function onUseMasterClicked(obj, playerColor, isAltClick)
