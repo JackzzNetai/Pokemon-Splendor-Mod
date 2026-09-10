@@ -21,7 +21,7 @@ function spawnCircularTile(imageUrl, tag)
     })
     object.setCustomObject({
         image = imageUrl,
-        type = 2,           -- 2 forces the square image into a Circle
+        type = 2, -- forces the square image into a Circle
         thickness = 0.15,
         stackable = true
     })
@@ -107,7 +107,7 @@ function setupDeck(deckKey, dealCount, isRowDeal, config)
             end
 
             -- 3. Move, shuffle, and deal
-            newDeck.setRotation({180, 0, 0})
+            newDeck.setRotation({180, 0, 0}) -- face-down
             newDeck.randomize()
             newDeck.setPositionSmooth(targetPos, false, false)
 
@@ -140,6 +140,8 @@ function onSetupButtonClicked(clickedObject, playerColor, isAltClick)
 
     local config = Global.getTable("CONFIG")
 
+    -- Seated players minus spectators.
+    -- Game rules: 4 → 7, 3 → 5, 2 → 4. Masterball stack is always 5.
     local activePlayerCount = #Player.getPlayers() - #Player.getSpectators()
     local standardTokenCount = 7
     

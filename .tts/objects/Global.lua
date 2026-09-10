@@ -715,6 +715,7 @@ local NON_STAGE_TIERS = {rare = true, legendary = true}
 
 local function getDiscount(parts)
     local discountType = parts[1]
+    -- Stage cards grant 1; rare/legendary grant 2.
     local amount = STAGE_TIERS[parts[2]] and 1 or 2
     return { [discountType] = amount }
 end
@@ -890,6 +891,7 @@ local function findMarketTake(object)
         end
         return nil
     end
+    -- Face-down: the pile deck, not the revealed card.
     if object.is_face_down then
         return nil
     end
@@ -921,6 +923,7 @@ local function takeFromDeckTo(deck, destPosition)
             card.setPositionSmooth(destPosition, false, false)
         end
     else
+        -- Last card in a pile is type Card, not Deck.
         if deck.is_face_down then
             deck.flip()
         end
@@ -1058,8 +1061,8 @@ local function zeroCountsByTokenType()
 end
 
 local function clearHoverCosts()
-    lastAdjustedHoverCosts = {}  -- Same as looping lastAdjustedHoverCosts[color] = nil
-    useMasterAsWild = {}  -- Practically same as looping useMasterAsWild[color] = false
+    lastAdjustedHoverCosts = {} -- Same as looping lastAdjustedHoverCosts[color] = nil
+    useMasterAsWild = {} -- Practically same as looping useMasterAsWild[color] = false
     for _, obj in pairs(useMasterTexts) do
         if isAlive(obj) then
             obj.TextTool.setFontColor(CONSTANTS.COLOR_WHITE)
@@ -1180,15 +1183,17 @@ local function nonNegative(raw)
     return math.max(0, raw)
 end
 
+-- When useMasterAsWild[color] is true: each non-masterball cost is capped at tokens owned;
+-- any unpaid remainder is added onto the masterball cost.
 local function catchCostToShow(color, tokenType)
     local adjusted = lastAdjustedHoverCosts[color]
     if useMasterAsWild[color] then
         local tokens = playerTokens[color]
         if tokenType == "masterball" then
             local shown = nonNegative(adjusted.masterball)
-            for tokenType, _ in pairs(TOKEN_TYPES) do
-                if tokenType ~= "masterball" then
-                    local overflow = nonNegative(adjusted[tokenType]) - tokens[tokenType]
+            for otherType, _ in pairs(TOKEN_TYPES) do
+                if otherType ~= "masterball" then
+                    local overflow = nonNegative(adjusted[otherType]) - tokens[otherType]
                     if overflow > 0 then
                         shown = shown + overflow
                     end
@@ -1310,7 +1315,17 @@ local function ensurePlayerCardState(color)
     end
 end
 
--- Drops _[index] from [discount]_[tier]_[family]_[index]; otherwise returns id.
+-- Card identity for looking up evolution (not full GM notes):
+--   Full id:     discount_tier_family_index  (e.g. pokeball_stage1_1_2)
+--   Truncated:   discount_tier_family       (drops index when present; stage3/rare/legendary stay as-is)
+-- playerCards[color][truncated] = how many prints of that family at that stage the player owns.
+-- evolveTargets[color][next-stage truncated id] = cost to evolve into that card.
+-- Cost comes from the first print (..._1) of the same family, one stage lower.
+-- Example: player owns a stage1 print of family 1 (GM notes pokeball_stage1_1_1, _2, or _3).
+-- Truncated ownership key is pokeball_stage1_1.
+-- evolveTargets then stores the next stage using truncated id pokeball_stage2_1 as the key,
+-- and the cost is CARD_DATABASE["pokeball_stage1_1_1"].evolution_cost (always the _1 print).
+-- Same pattern for stage2 → stage3. Stage3, rare, and legendary do not add a target.
 local function truncatedCardId(id)
     local truncated = id:match("^([^_]+_[^_]+_[^_]+)_%d+$")
     if truncated ~= nil then
@@ -1344,7 +1359,7 @@ local function applyCardDelta(color, object, sign)
                 .. " discount would go negative; clamped to 0."
         )
         discounts[tokenType] = nextCount
-        setDisplayTextValue(discountTexts, color, tokenType, -nextCount)
+        setDisplayTextValue(discountTexts, color, tokenType, -nextCount) -- display as negative
     end
 
     local nextVp = applyClampedDelta(
@@ -1629,6 +1644,7 @@ local function cardInPlayerHand(object, color)
     return false
 end
 
+-- Hand: any orientation. Market: face-up in MARKET_ZONE only.
 local function showsCatchCostOnHover(object, color)
     if not isAlive(object) or object.type ~= "Card" then
         return false
