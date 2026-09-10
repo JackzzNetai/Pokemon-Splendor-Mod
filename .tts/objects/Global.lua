@@ -764,10 +764,6 @@ local function firstTag(object)
     return tags[1]
 end
 
-local function hasGuid(guid)
-    return guid ~= nil and guid ~= ""
-end
-
 -- True if pos.x/z is inside zone {xMin,xMax,zMin,zMax}.
 -- Also accepts {pos=, zone=} so object scripts can Global.call this.
 function inXZZone(pos, zone)
@@ -1121,28 +1117,17 @@ local function buildPlayerZoneIndexes()
     cardsZoneGuidToColor = {}
     matGuidToColor = {}
     for color, zones in pairs(CONFIG.PLAYER_ZONES) do
-        if hasGuid(zones.tokens) then
-            tokensZoneGuidToColor[zones.tokens] = color
-        end
-        if zones.cards ~= nil then
-            for _, guid in ipairs(zones.cards) do
-                if hasGuid(guid) then
-                    cardsZoneGuidToColor[guid] = color
-                end
-            end
+        tokensZoneGuidToColor[zones.tokens] = color
+        for _, guid in ipairs(zones.cards) do
+            cardsZoneGuidToColor[guid] = color
         end
     end
     for color, matGuid in pairs(CONFIG.STATS_MATS) do
-        if hasGuid(matGuid) then
-            matGuidToColor[matGuid] = color
-        end
+        matGuidToColor[matGuid] = color
     end
 end
 
 local function forEachZoneObject(guid, fn)
-    if not hasGuid(guid) then
-        return
-    end
     local zone = getObjectFromGUID(guid)
     if zone == nil then
         return
@@ -1417,12 +1402,10 @@ local function initPlayerCardsFromZones()
     clearCardState()
 
     for color, zones in pairs(CONFIG.PLAYER_ZONES) do
-        if zones.cards ~= nil then
-            for _, guid in ipairs(zones.cards) do
-                forEachZoneObject(guid, function(obj)
-                    applyCardDelta(color, obj, 1)
-                end)
-            end
+        for _, guid in ipairs(zones.cards) do
+            forEachZoneObject(guid, function(obj)
+                applyCardDelta(color, obj, 1)
+            end)
         end
     end
 end
@@ -1493,32 +1476,30 @@ local function spawnDisplayTexts(config, tag, store, valueFor)
     end
 
     for color, matGuid in pairs(CONFIG.STATS_MATS) do
-        if hasGuid(matGuid) then
-            local mat = getObjectFromGUID(matGuid)
-            if mat ~= nil then
-                local worldRot = addRotations(mat.getRotation(), rotOff)
-                local colorKey = color
-                if single then
+        local mat = getObjectFromGUID(matGuid)
+        if mat ~= nil then
+            local worldRot = addRotations(mat.getRotation(), rotOff)
+            local colorKey = color
+            if single then
+                spawnLockedText(
+                    mat, worldRot, config.offset, config, tag, valueFor(colorKey),
+                    function(obj)
+                        store[colorKey] = obj
+                    end
+                )
+            else
+                store[color] = {}
+                for key, offset in pairs(config.offsets) do
+                    local ballKey = key
                     spawnLockedText(
-                        mat, worldRot, config.offset, config, tag, valueFor(colorKey),
+                        mat, worldRot, offset, config, tag, valueFor(colorKey, ballKey),
                         function(obj)
-                            store[colorKey] = obj
+                            if store[colorKey] == nil then
+                                store[colorKey] = {}
+                            end
+                            store[colorKey][ballKey] = obj
                         end
                     )
-                else
-                    store[color] = {}
-                    for key, offset in pairs(config.offsets) do
-                        local ballKey = key
-                        spawnLockedText(
-                            mat, worldRot, offset, config, tag, valueFor(colorKey, ballKey),
-                            function(obj)
-                                if store[colorKey] == nil then
-                                    store[colorKey] = {}
-                                end
-                                store[colorKey][ballKey] = obj
-                            end
-                        )
-                    end
                 end
             end
         end
@@ -1592,14 +1573,12 @@ end
 
 local function spawnStatsMatButtons()
     for _, matGuid in pairs(CONFIG.STATS_MATS) do
-        if hasGuid(matGuid) then
-            local mat = getObjectFromGUID(matGuid)
-            if mat ~= nil then
-                mat.clearButtons()
-                addStatsMatButton(mat, CONFIG.EVO_HINT_BUTTON, "onEvoHintClicked")
-                addStatsMatButton(mat, CONFIG.PAY_BUTTON, "onPayClicked")
-                addStatsMatButton(mat, CONFIG.USE_MASTER_BUTTON, "onUseMasterClicked")
-            end
+        local mat = getObjectFromGUID(matGuid)
+        if mat ~= nil then
+            mat.clearButtons()
+            addStatsMatButton(mat, CONFIG.EVO_HINT_BUTTON, "onEvoHintClicked")
+            addStatsMatButton(mat, CONFIG.PAY_BUTTON, "onPayClicked")
+            addStatsMatButton(mat, CONFIG.USE_MASTER_BUTTON, "onUseMasterClicked")
         end
     end
     spawnStatsMatLabels()
@@ -1896,16 +1875,14 @@ end
 local function applyStatsMatIconOffsets()
     local y = CONSTANTS.STATS_ICON_Y
     for _, matGuid in pairs(CONFIG.STATS_MATS) do
-        if hasGuid(matGuid) then
-            local mat = getObjectFromGUID(matGuid)
-            if mat ~= nil then
-                for tokenType, x in pairs(CONSTANTS.STATS_TEXT_X) do
-                    mat.UI.setAttribute(
-                        tokenType .. "_icon",
-                        "offsetXY",
-                        string.format("%.3f %s", x * 100, tostring(y))
-                    )
-                end
+        local mat = getObjectFromGUID(matGuid)
+        if mat ~= nil then
+            for tokenType, x in pairs(CONSTANTS.STATS_TEXT_X) do
+                mat.UI.setAttribute(
+                    tokenType .. "_icon",
+                    "offsetXY",
+                    string.format("%.3f %s", x * 100, tostring(y))
+                )
             end
         end
     end
