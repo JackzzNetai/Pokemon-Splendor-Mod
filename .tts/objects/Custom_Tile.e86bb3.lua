@@ -32,7 +32,7 @@ end
 function spawnTokenStack(tokenKey, count, config)
     local tag = config.TAGS[tokenKey]
     local spawnPos = config.TOKEN_POSITIONS[tokenKey]
-    local url = config.TOKEN_URLS[tokenKey]
+    local url = config.TOKEN_TILE_URLS[tokenKey]
     
     for _, obj in ipairs(getObjectsWithTag(tag)) do
         if obj.type == "Tile" and not obj.isDestroyed() then
@@ -72,7 +72,7 @@ function findReadyDeck(tag, zone, expected, allowExtra)
     return nil
 end
 
-function SetupDeck(deckKey, dealCount, isRowDeal, config)
+function setupDeck(deckKey, dealCount, isRowDeal, config)
     local tag = config.TAGS[deckKey]
     local targetPos = config.DECK_POSITIONS[deckKey]
     local expected = config.DECK_SIZES[deckKey]
@@ -129,7 +129,7 @@ function SetupDeck(deckKey, dealCount, isRowDeal, config)
         end,
         5,
         function()
-            printToAll("SetupDeck timed out for " .. deckKey, {1, 0.4, 0})
+            printToAll("setupDeck timed out for " .. deckKey, {1, 0.4, 0})
         end
     )
 end
@@ -149,11 +149,11 @@ function onSetupButtonClicked(clickedObject, playerColor, isAltClick)
         standardTokenCount = 4
     end
 
-    SetupDeck("stage1", 4, true, config)
-    SetupDeck("stage2", 4, true, config)
-    SetupDeck("stage3", 4, true, config)
-    SetupDeck("rare", 1, false, config)
-    SetupDeck("legendary", 1, false, config)
+    setupDeck("stage1", 4, true, config)
+    setupDeck("stage2", 4, true, config)
+    setupDeck("stage3", 4, true, config)
+    setupDeck("rare", 1, false, config)
+    setupDeck("legendary", 1, false, config)
 
     spawnTokenStack("pokeball", standardTokenCount, config)
     spawnTokenStack("greatball", standardTokenCount, config)
