@@ -12,19 +12,10 @@ local CONSTANTS = {
     COLOR_RED = {1, 0.2, 0.2},
     COLOR_GOLD = {1, 0.82, 0.2},
     STATS_BUTTON_COLOR = {0.18, 0.18, 0.22},
-
-    STATS_TEXT_FONT_SIZE = {
-        DISCOUNT = 60,
-        COST_N_TOKEN = 90,
-        VP = 100,
-        BUTTON_LABEL = 30
-    },
     STATS_BUTTON_WIDTH = 60,
     STATS_BUTTON_HEIGHT = 100,
 
-    STATS_TEXT_ROTATION = {90, 0, 0},
-    
-    STATS_TEXT_X = {
+    STATS_ICON_X = {
         pokeball   = -0.16004,
         greatball  = -0.01459,
         ultraball  = 0.13085,
@@ -33,14 +24,8 @@ local CONSTANTS = {
         masterball = -0.30548
     },
     STATS_TEXT_VP_X = -0.43,
-    STATS_TEXT_COST_N_TOKEN_X_DELTA = 0.035,
-    STATS_TEXT_Y = 0.51,
-    STATS_TEXT_Z = {
-        DISCOUNT = 0.05,
-        COST_N_TOKEN = -0.15
-    },
+    STATS_MAT_SURFACE_Y = 0.51,
     STATS_ICON_Y = 27,
-    STATS_BUTTON_LABEL_Z_DELTA = 0.047,
     DECK_Y  = 1.692,
     TOKEN_Y = 2.29,
     TOKEN_Z = -5.81,
@@ -152,42 +137,14 @@ CONFIG = {
         Pink   = "565e01"
     },
 
-    -- offsets are built in spawnDisplayTexts from STATS_TEXT_X / Y / Z / X_DELTA
-    DISCOUNT_DISPLAY = {
-        fontSize = CONSTANTS.STATS_TEXT_FONT_SIZE.DISCOUNT,
-        z = CONSTANTS.STATS_TEXT_Z.DISCOUNT,
-        includeMasterball = false
-    },
-    COST_DISPLAY = {
-        fontSize = CONSTANTS.STATS_TEXT_FONT_SIZE.COST_N_TOKEN,
-        z = CONSTANTS.STATS_TEXT_Z.COST_N_TOKEN,
-        xDelta = -CONSTANTS.STATS_TEXT_COST_N_TOKEN_X_DELTA
-    },
-    TOKEN_DISPLAY = {
-        fontSize = CONSTANTS.STATS_TEXT_FONT_SIZE.COST_N_TOKEN,
-        z = CONSTANTS.STATS_TEXT_Z.COST_N_TOKEN,
-        xDelta = CONSTANTS.STATS_TEXT_COST_N_TOKEN_X_DELTA
-    },
-    SLASH_DISPLAY = {
-        fontSize = CONSTANTS.STATS_TEXT_FONT_SIZE.COST_N_TOKEN,
-        z = CONSTANTS.STATS_TEXT_Z.COST_N_TOKEN
-    },
-    VP_DISPLAY = {
-        fontSize = CONSTANTS.STATS_TEXT_FONT_SIZE.VP,
-        offset = {CONSTANTS.STATS_TEXT_VP_X, CONSTANTS.STATS_TEXT_Y, 0.43}
-    },
-
     EVO_HINT_BUTTON = {
-        label    = "进化提示",
-        position = {-CONSTANTS.STATS_TEXT_VP_X, CONSTANTS.STATS_TEXT_Y, -0.042}
+        position = {-CONSTANTS.STATS_TEXT_VP_X, CONSTANTS.STATS_MAT_SURFACE_Y, -0.042}
     },
     PAY_BUTTON = {
-        label    = "支付",
-        position = {-CONSTANTS.STATS_TEXT_VP_X, CONSTANTS.STATS_TEXT_Y, -0.305}
+        position = {-CONSTANTS.STATS_TEXT_VP_X, CONSTANTS.STATS_MAT_SURFACE_Y, -0.305}
     },
     USE_MASTER_BUTTON = {
-        label    = "使用大师球",
-        position = {-CONSTANTS.STATS_TEXT_X.masterball, CONSTANTS.STATS_TEXT_Y, -0.042}
+        position = {-CONSTANTS.STATS_ICON_X.masterball, CONSTANTS.STATS_MAT_SURFACE_Y, -0.042}
     }
 }
 
@@ -1036,13 +993,10 @@ local matGuidToColor = {}
 local PER_TOKEN_TEXT_STORES = {
     discount = {},
     cost     = {},
-    token    = {},
-    slash    = {}
+    token    = {}
 }
 local PER_COLOR_TEXT_STORES = {
     vp         = {},
-    evo_hint   = {},
-    pay        = {},
     use_master = {}
 }
 
@@ -1850,7 +1804,7 @@ local function applyStatsMatIconOffsets()
     for _, matGuid in pairs(CONFIG.STATS_MATS) do
         local mat = getObjectFromGUID(matGuid)
         if mat ~= nil then
-            for tokenType, x in pairs(CONSTANTS.STATS_TEXT_X) do
+            for tokenType, x in pairs(CONSTANTS.STATS_ICON_X) do
                 mat.UI.setAttribute(
                     tokenType .. "_icon",
                     "offsetXY",
