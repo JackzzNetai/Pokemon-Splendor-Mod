@@ -1032,25 +1032,19 @@ local useMasterAsWild = {}
 local tokensZoneGuidToColor = {}
 local cardsZoneGuidToColor = {}
 local matGuidToColor = {}
--- Spawned stats number 3DTexts.
-local discountTexts = {}
-local costTexts = {}
-local tokenTexts = {}
-local slashTexts = {}
-local vpTexts = {}
--- Spawned button-label 3DTexts.
-local evoHintTexts = {}
-local payTexts = {}
-local useMasterTexts = {}
--- Tags for those 3DTexts (clear/find by tag).
-local DISCOUNT_TEXT_TAG = "stats_discount_text"
-local COST_TEXT_TAG = "stats_cost_text"
-local TOKEN_TEXT_TAG = "stats_token_text"
-local SLASH_TEXT_TAG = "stats_slash_text"
-local VP_TEXT_TAG = "stats_vp_text"
-local EVO_HINT_TEXT_TAG = "stats_evo_hint_text"
-local PAY_TEXT_TAG = "stats_pay_text"
-local USE_MASTER_TEXT_TAG = "stats_use_master_text"
+-- Bound stats 3DTexts. Per-token kinds: store[color][tokenType]; others: store[color].
+local PER_TOKEN_TEXT_STORES = {
+    discount = {},
+    cost     = {},
+    token    = {},
+    slash    = {}
+}
+local PER_COLOR_TEXT_STORES = {
+    vp         = {},
+    evo_hint   = {},
+    pay        = {},
+    use_master = {}
+}
 
 local function zeroCountsByTokenType()
     local counts = {}
@@ -1063,7 +1057,7 @@ end
 local function clearHoverCosts()
     lastAdjustedHoverCosts = {} -- Same as looping lastAdjustedHoverCosts[color] = nil
     useMasterAsWild = {} -- Practically same as looping useMasterAsWild[color] = false
-    for _, obj in pairs(useMasterTexts) do
+    for _, obj in pairs(PER_COLOR_TEXT_STORES.use_master) do
         if isAlive(obj) then
             obj.TextTool.setFontColor(CONSTANTS.COLOR_WHITE)
         end
@@ -1087,7 +1081,7 @@ end
 
 local function setUseMasterAsWild(color, enabled)
     useMasterAsWild[color] = enabled
-    local obj = useMasterTexts[color]
+    local obj = PER_COLOR_TEXT_STORES.use_master[color]
     if isAlive(obj) then
         if enabled then
             obj.TextTool.setFontColor(CONSTANTS.COLOR_GOLD)
@@ -1165,6 +1159,8 @@ local function resolveCard(object, color)
 end
 
 local function setTextToolValue(obj, value)
+    -- Safety, and onLoad no-op: setVpDisplayTextValue before bindStatsTexts passes nil
+    -- (initPlayerCardsFromZones → applyCardDelta).
     if not isAlive(obj) then
         return
     end
@@ -1173,6 +1169,8 @@ end
 
 local function setDisplayTextValue(store, color, tokenType, count)
     local byColor = store[color]
+    -- Safety, and onLoad no-op: PER_* stores empty until bindStatsTexts
+    -- (initPlayerCardsFromZones → applyCardDelta).
     if byColor == nil then
         return
     end
@@ -1207,7 +1205,7 @@ local function catchCostToShow(color, tokenType)
 end
 
 local function setCostDisplay(color, tokenType)
-    local byColor = costTexts[color]
+    local byColor = PER_TOKEN_TEXT_STORES.cost[color]
     if byColor == nil then
         return
     end
@@ -1237,7 +1235,7 @@ local function writeCostDisplays(color)
 end
 
 local function setVpDisplayTextValue(color, count)
-    setTextToolValue(vpTexts[color], count)
+    setTextToolValue(PER_COLOR_TEXT_STORES.vp[color], count)
 end
 
 local function countOrZero(map, color, key)
@@ -1277,7 +1275,7 @@ local function applyTokenDelta(color, object, sign)
         "Warning: " .. color .. " " .. tokenType .. " count would go negative; clamped to 0."
     )
     counts[tokenType] = nextCount
-    setDisplayTextValue(tokenTexts, color, tokenType, nextCount)
+    setDisplayTextValue(PER_TOKEN_TEXT_STORES.token, color, tokenType, nextCount)
     local remembered = lastAdjustedHoverCosts[color]
     if remembered ~= nil then
         setCostDisplay(color, tokenType)
@@ -1359,7 +1357,7 @@ local function applyCardDelta(color, object, sign)
                 .. " discount would go negative; clamped to 0."
         )
         discounts[tokenType] = nextCount
-        setDisplayTextValue(discountTexts, color, tokenType, -nextCount) -- display as negative
+        setDisplayTextValue(PER_TOKEN_TEXT_STORES.discount, color, tokenType, -nextCount) -- display as negative
     end
 
     local nextVp = applyClampedDelta(
@@ -1426,156 +1424,116 @@ local function initPlayerCardsFromZones()
 end
 
 -- ============================================================================
--- Stats 3DText spawn + mat buttons/labels
+-- Stats 3DText bind (GM notes)
 -- ============================================================================
 
-local function clearTaggedTexts(tag)
-    for _, obj in ipairs(getObjectsWithTag(tag)) do
-        if isAlive(obj) then
-            obj.destruct()
-        end
+local function bindOneStatsText(obj)
+    local notes = obj.getGMNotes()
+    if notes == nil or notes == "" then
+        return
     end
+    local kind, color, tokenType = notes:match("^([^:]+):([^:]+):([^:]+)$")
+    if kind ~= nil then
+        local store = PER_TOKEN_TEXT_STORES[kind]
+        if store == nil then
+            if PER_COLOR_TEXT_STORES[kind] ~= nil then
+                printWarning(
+                    "Warning: stats 3DText GM note '" .. notes
+                        .. "' (GUID " .. obj.getGUID() .. ") has extra token field."
+                )
+            end
+            return
+        end
+        if store[color] == nil then
+            store[color] = {}
+        end
+        store[color][tokenType] = obj
+        return
+    end
+    kind, color = notes:match("^([^:]+):([^:]+)$")
+    if kind == nil then
+        return
+    end
+    local store = PER_COLOR_TEXT_STORES[kind]
+    if store == nil then
+        if PER_TOKEN_TEXT_STORES[kind] ~= nil then
+            printWarning(
+                "Warning: stats 3DText GM note '" .. notes
+                    .. "' (GUID " .. obj.getGUID() .. ") is missing token field."
+            )
+        end
+        return
+    end
+    store[color] = obj
 end
 
--- Kinds encoded in GM notes (new texts have no tags). Used to wipe copies on resend.
-local NUMBER_TEXT_KINDS = {
-    discount = true, cost = true, token = true, slash = true, vp = true
-}
-local LABEL_TEXT_KINDS = {
-    evo_hint = true, pay = true, use_master = true
-}
+local function bindStatsTexts()
+    for kind, _ in pairs(PER_TOKEN_TEXT_STORES) do
+        PER_TOKEN_TEXT_STORES[kind] = {}
+    end
+    for kind, _ in pairs(PER_COLOR_TEXT_STORES) do
+        PER_COLOR_TEXT_STORES[kind] = {}
+    end
 
-local function clearNotedStatsTexts(kinds)
     for _, obj in ipairs(getObjects()) do
         if isAlive(obj) and obj.TextTool ~= nil then
-            local notes = obj.getGMNotes()
-            local kind = notes ~= nil and notes:match("^([^:]+)") or nil
-            if kind ~= nil and kinds[kind] then
-                obj.destruct()
+            bindOneStatsText(obj)
+        end
+    end
+end
+
+local function displayedNumber(obj)
+    if not isAlive(obj) then
+        return nil
+    end
+    return tonumber(obj.TextTool.getValue())
+end
+
+local function warnAndFixStatsText(color, key, obj, expected)
+    printWarning(
+        "Warning: " .. tostring(color) .. " " .. key
+            .. " display desynced from zones; using " .. tostring(expected) .. "."
+    )
+    setTextToolValue(obj, expected)
+end
+
+-- Save glyphs vs zone-derived tables. Table wins on mismatch.
+local function checkStatsDisplaysAgainstTables()
+    for color, _ in pairs(CONFIG.PLAYER_ZONES) do
+        for tokenType, _ in pairs(TOKEN_TYPES) do
+            local tokenStore = PER_TOKEN_TEXT_STORES.token[color]
+            local tokenObj = tokenStore and tokenStore[tokenType]
+            if tokenObj ~= nil then
+                local expected = playerTokens[color][tokenType] or 0
+                local shown = displayedNumber(tokenObj)
+                if shown ~= expected then
+                    warnAndFixStatsText(color, tokenType .. " tokens", tokenObj, expected)
+                end
             end
-        end
-    end
-end
-
-local function addRotations(a, b)
-    return {
-        (a[1] or a.x or 0) + (b[1] or b.x or 0),
-        (a[2] or a.y or 0) + (b[2] or b.y or 0),
-        (a[3] or a.z or 0) + (b[3] or b.z or 0)
-    }
-end
-
-local function statsGmNote(kind, color, tokenType)
-    if tokenType ~= nil then
-        return kind .. ":" .. color .. ":" .. tokenType
-    end
-    return kind .. ":" .. color
-end
-
-local function configureStatsText(obj, config, color, kind, tokenType, value)
-    obj.TextTool.setValue(tostring(value))
-    obj.TextTool.setFontSize(config.fontSize)
-    obj.TextTool.setFontColor(CONSTANTS.COLOR_WHITE)
-    obj.setGMNotes(statsGmNote(kind, color, tokenType))
-    obj.setLock(true)
-    obj.interactable = false
-end
-
-local function spawnLockedText(mat, worldRot, offset, config, color, kind, tokenType, value, onReady)
-    spawnObject({
-        type              = "3DText",
-        position          = mat.positionToWorld(offset),
-        rotation          = worldRot,
-        sound             = false,
-        callback_function = function(obj)
-            if not isAlive(obj) then
-                return
-            end
-            configureStatsText(obj, config, color, kind, tokenType, value)
-            onReady(obj)
-        end
-    })
-end
-
-local function buildStatsOffsets(config)
-    local offsets = {}
-    local xDelta = config.xDelta or 0
-    local includeMasterball = config.includeMasterball ~= false
-    for tokenType, x in pairs(CONSTANTS.STATS_TEXT_X) do
-        if includeMasterball or tokenType ~= "masterball" then
-            offsets[tokenType] = {x + xDelta, CONSTANTS.STATS_TEXT_Y, config.z}
-        end
-    end
-    return offsets
-end
-
--- config.offset -> one text per mat; else one text per token from CONSTANTS.STATS_TEXT_X
-local function spawnDisplayTexts(config, kind, store, valueFor)
-    local rotOff = CONSTANTS.STATS_TEXT_ROTATION
-    local single = config.offset ~= nil
-    if not single and config.offsets == nil then
-        config.offsets = buildStatsOffsets(config)
-    end
-
-    for color, matGuid in pairs(CONFIG.STATS_MATS) do
-        local mat = getObjectFromGUID(matGuid)
-        if mat ~= nil then
-            local worldRot = addRotations(mat.getRotation(), rotOff)
-            local colorKey = color
-            if single then
-                spawnLockedText(
-                    mat, worldRot, config.offset, config, colorKey, kind, nil,
-                    valueFor(colorKey),
-                    function(obj)
-                        store[colorKey] = obj
+            if tokenType ~= "masterball" then
+                local discountStore = PER_TOKEN_TEXT_STORES.discount[color]
+                local discountObj = discountStore and discountStore[tokenType]
+                if discountObj ~= nil then
+                    local expected = -(playerDiscounts[color][tokenType] or 0)
+                    local shown = displayedNumber(discountObj)
+                    if shown ~= expected then
+                        warnAndFixStatsText(color, tokenType .. " discount", discountObj, expected)
                     end
-                )
-            else
-                store[color] = {}
-                for key, offset in pairs(config.offsets) do
-                    local tokenKey = key
-                    spawnLockedText(
-                        mat, worldRot, offset, config, colorKey, kind, tokenKey,
-                        valueFor(colorKey, tokenKey),
-                        function(obj)
-                            if store[colorKey] == nil then
-                                store[colorKey] = {}
-                            end
-                            store[colorKey][tokenKey] = obj
-                        end
-                    )
                 end
             end
         end
+        local vpObj = PER_COLOR_TEXT_STORES.vp[color]
+        if vpObj ~= nil then
+            local expected = playerVp[color] or 0
+            local shown = displayedNumber(vpObj)
+            if shown ~= expected then
+                warnAndFixStatsText(color, "VP", vpObj, expected)
+            end
+        end
     end
 end
 
-local function spawnStatsTexts()
-    for _, tag in ipairs({
-        DISCOUNT_TEXT_TAG, COST_TEXT_TAG, TOKEN_TEXT_TAG, SLASH_TEXT_TAG, VP_TEXT_TAG
-    }) do
-        clearTaggedTexts(tag)
-    end
-    clearNotedStatsTexts(NUMBER_TEXT_KINDS)
-    discountTexts, costTexts, tokenTexts, slashTexts, vpTexts = {}, {}, {}, {}, {}
-
-    spawnDisplayTexts(CONFIG.DISCOUNT_DISPLAY, "discount", discountTexts, function(color, tokenType)
-        return -countOrZero(playerDiscounts, color, tokenType)
-    end)
-    spawnDisplayTexts(CONFIG.COST_DISPLAY, "cost", costTexts, function()
-        return 0
-    end)
-    spawnDisplayTexts(CONFIG.TOKEN_DISPLAY, "token", tokenTexts, function(color, tokenType)
-        return countOrZero(playerTokens, color, tokenType)
-    end)
-    spawnDisplayTexts(CONFIG.SLASH_DISPLAY, "slash", slashTexts, function()
-        return "/"
-    end)
-    spawnDisplayTexts(CONFIG.VP_DISPLAY, "vp", vpTexts, function(color)
-        return playerVp[color] or 0
-    end)
-end
-
+-- Classic UI click hitboxes; created in onLoad (not saved as table objects).
 local function addStatsMatButton(mat, config, clickFunction)
     mat.createButton({
         click_function = clickFunction,
@@ -1587,47 +1545,15 @@ local function addStatsMatButton(mat, config, clickFunction)
     })
 end
 
-local function labelDisplayFromButton(buttonCfg)
-    local x, y, z = posXYZ(buttonCfg.position)
-    return {
-        fontSize = CONSTANTS.STATS_TEXT_FONT_SIZE.BUTTON_LABEL,
-        offset = { -x, y, z + CONSTANTS.STATS_BUTTON_LABEL_Z_DELTA }
-    }
-end
-
-local function spawnStatsMatLabels()
-    for _, tag in ipairs({EVO_HINT_TEXT_TAG, PAY_TEXT_TAG, USE_MASTER_TEXT_TAG}) do
-        clearTaggedTexts(tag)
-    end
-    clearNotedStatsTexts(LABEL_TEXT_KINDS)
-    evoHintTexts, payTexts, useMasterTexts = {}, {}, {}
-
-    local specs = {
-        { CONFIG.EVO_HINT_BUTTON, "evo_hint", evoHintTexts },
-        { CONFIG.PAY_BUTTON, "pay", payTexts },
-        { CONFIG.USE_MASTER_BUTTON, "use_master", useMasterTexts }
-    }
-    for _, spec in ipairs(specs) do
-        local buttonCfg = spec[1]
-        spawnDisplayTexts(
-            labelDisplayFromButton(buttonCfg),
-            spec[2], spec[3],
-            function() return buttonCfg.label end
-        )
-    end
-end
-
-local function spawnStatsMatButtons()
+local function createStatsMatButtons()
     for _, matGuid in pairs(CONFIG.STATS_MATS) do
         local mat = getObjectFromGUID(matGuid)
         if mat ~= nil then
-            mat.clearButtons()
             addStatsMatButton(mat, CONFIG.EVO_HINT_BUTTON, "onEvoHintClicked")
             addStatsMatButton(mat, CONFIG.PAY_BUTTON, "onPayClicked")
             addStatsMatButton(mat, CONFIG.USE_MASTER_BUTTON, "onUseMasterClicked")
         end
     end
-    spawnStatsMatLabels()
 end
 
 -- ============================================================================
@@ -1690,7 +1616,7 @@ local function showsCatchCostOnHover(object, color)
 end
 
 local function applyCatchCostsFromEntry(color, entry)
-    if costTexts[color] == nil then
+    if PER_TOKEN_TEXT_STORES.cost[color] == nil then
         return
     end
     ensurePlayerCardState(color)
@@ -1709,7 +1635,7 @@ function onObjectHover(playerColor, hoveredObject)
     if not showsCatchCostOnHover(hoveredObject, playerColor) then
         return
     end
-    if costTexts[playerColor] == nil then
+    if PER_TOKEN_TEXT_STORES.cost[playerColor] == nil then
         return
     end
     local id = hoveredObject.getGMNotes()
@@ -1891,8 +1817,8 @@ function clearPlayerStats()
     clearTokenState()
     for color, _ in pairs(CONFIG.PLAYER_ZONES) do
         for tokenType, _ in pairs(TOKEN_TYPES) do
-            setDisplayTextValue(tokenTexts, color, tokenType, 0)
-            setDisplayTextValue(discountTexts, color, tokenType, 0)
+            setDisplayTextValue(PER_TOKEN_TEXT_STORES.token, color, tokenType, 0)
+            setDisplayTextValue(PER_TOKEN_TEXT_STORES.discount, color, tokenType, 0)
             setCostDisplay(color, tokenType) -- writes "0" and forces white font color
         end
         setVpDisplayTextValue(color, 0)
@@ -1947,9 +1873,16 @@ function onLoad()
     registerTokenUiAssets()
     applyStatsMatIconOffsets()
     buildPlayerZoneIndexes()
-    clearHoverCosts()
-    initPlayerTokensFromZones()
+    initPlayerTokensFromZones() -- tally only; does not write 3DText
+    -- initPlayerCardsFromZones → applyCardDelta → setDisplayTextValue / setVpDisplayTextValue.
+    -- bindStatsTexts after initPlayerCardsFromZones so those writes no-op (empty PER_* stores);
+    -- saved 3DText stays until checkStatsDisplaysAgainstTables.
     initPlayerCardsFromZones()
-    spawnStatsTexts()
-    spawnStatsMatButtons()
+    bindStatsTexts()
+    checkStatsDisplaysAgainstTables()
+    clearHoverCosts()
+    for color, _ in pairs(CONFIG.PLAYER_ZONES) do
+        writeCostDisplays(color)
+    end
+    createStatsMatButtons()
 end
