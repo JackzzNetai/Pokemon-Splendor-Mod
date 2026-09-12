@@ -1437,6 +1437,26 @@ local function clearTaggedTexts(tag)
     end
 end
 
+-- Kinds encoded in GM notes (new texts have no tags). Used to wipe copies on resend.
+local NUMBER_TEXT_KINDS = {
+    discount = true, cost = true, token = true, slash = true, vp = true
+}
+local LABEL_TEXT_KINDS = {
+    evo_hint = true, pay = true, use_master = true
+}
+
+local function clearNotedStatsTexts(kinds)
+    for _, obj in ipairs(getObjects()) do
+        if isAlive(obj) and obj.TextTool ~= nil then
+            local notes = obj.getGMNotes()
+            local kind = notes ~= nil and notes:match("^([^:]+)") or nil
+            if kind ~= nil and kinds[kind] then
+                obj.destruct()
+            end
+        end
+    end
+end
+
 local function addRotations(a, b)
     return {
         (a[1] or a.x or 0) + (b[1] or b.x or 0),
@@ -1445,16 +1465,23 @@ local function addRotations(a, b)
     }
 end
 
-local function configureStatsText(obj, config, tag, value)
+local function statsGmNote(kind, color, tokenType)
+    if tokenType ~= nil then
+        return kind .. ":" .. color .. ":" .. tokenType
+    end
+    return kind .. ":" .. color
+end
+
+local function configureStatsText(obj, config, color, kind, tokenType, value)
     obj.TextTool.setValue(tostring(value))
     obj.TextTool.setFontSize(config.fontSize)
     obj.TextTool.setFontColor(CONSTANTS.COLOR_WHITE)
-    obj.addTag(tag)
+    obj.setGMNotes(statsGmNote(kind, color, tokenType))
     obj.setLock(true)
     obj.interactable = false
 end
 
-local function spawnLockedText(mat, worldRot, offset, config, tag, value, onReady)
+local function spawnLockedText(mat, worldRot, offset, config, color, kind, tokenType, value, onReady)
     spawnObject({
         type              = "3DText",
         position          = mat.positionToWorld(offset),
@@ -1464,7 +1491,7 @@ local function spawnLockedText(mat, worldRot, offset, config, tag, value, onRead
             if not isAlive(obj) then
                 return
             end
-            configureStatsText(obj, config, tag, value)
+            configureStatsText(obj, config, color, kind, tokenType, value)
             onReady(obj)
         end
     })
@@ -1483,7 +1510,7 @@ local function buildStatsOffsets(config)
 end
 
 -- config.offset -> one text per mat; else one text per token from CONSTANTS.STATS_TEXT_X
-local function spawnDisplayTexts(config, tag, store, valueFor)
+local function spawnDisplayTexts(config, kind, store, valueFor)
     local rotOff = CONSTANTS.STATS_TEXT_ROTATION
     local single = config.offset ~= nil
     if not single and config.offsets == nil then
@@ -1497,7 +1524,8 @@ local function spawnDisplayTexts(config, tag, store, valueFor)
             local colorKey = color
             if single then
                 spawnLockedText(
-                    mat, worldRot, config.offset, config, tag, valueFor(colorKey),
+                    mat, worldRot, config.offset, config, colorKey, kind, nil,
+                    valueFor(colorKey),
                     function(obj)
                         store[colorKey] = obj
                     end
@@ -1505,14 +1533,15 @@ local function spawnDisplayTexts(config, tag, store, valueFor)
             else
                 store[color] = {}
                 for key, offset in pairs(config.offsets) do
-                    local ballKey = key
+                    local tokenKey = key
                     spawnLockedText(
-                        mat, worldRot, offset, config, tag, valueFor(colorKey, ballKey),
+                        mat, worldRot, offset, config, colorKey, kind, tokenKey,
+                        valueFor(colorKey, tokenKey),
                         function(obj)
                             if store[colorKey] == nil then
                                 store[colorKey] = {}
                             end
-                            store[colorKey][ballKey] = obj
+                            store[colorKey][tokenKey] = obj
                         end
                     )
                 end
@@ -1527,21 +1556,22 @@ local function spawnStatsTexts()
     }) do
         clearTaggedTexts(tag)
     end
+    clearNotedStatsTexts(NUMBER_TEXT_KINDS)
     discountTexts, costTexts, tokenTexts, slashTexts, vpTexts = {}, {}, {}, {}, {}
 
-    spawnDisplayTexts(CONFIG.DISCOUNT_DISPLAY, DISCOUNT_TEXT_TAG, discountTexts, function(color, tokenType)
+    spawnDisplayTexts(CONFIG.DISCOUNT_DISPLAY, "discount", discountTexts, function(color, tokenType)
         return -countOrZero(playerDiscounts, color, tokenType)
     end)
-    spawnDisplayTexts(CONFIG.COST_DISPLAY, COST_TEXT_TAG, costTexts, function()
+    spawnDisplayTexts(CONFIG.COST_DISPLAY, "cost", costTexts, function()
         return 0
     end)
-    spawnDisplayTexts(CONFIG.TOKEN_DISPLAY, TOKEN_TEXT_TAG, tokenTexts, function(color, tokenType)
+    spawnDisplayTexts(CONFIG.TOKEN_DISPLAY, "token", tokenTexts, function(color, tokenType)
         return countOrZero(playerTokens, color, tokenType)
     end)
-    spawnDisplayTexts(CONFIG.SLASH_DISPLAY, SLASH_TEXT_TAG, slashTexts, function()
+    spawnDisplayTexts(CONFIG.SLASH_DISPLAY, "slash", slashTexts, function()
         return "/"
     end)
-    spawnDisplayTexts(CONFIG.VP_DISPLAY, VP_TEXT_TAG, vpTexts, function(color)
+    spawnDisplayTexts(CONFIG.VP_DISPLAY, "vp", vpTexts, function(color)
         return playerVp[color] or 0
     end)
 end
@@ -1569,12 +1599,13 @@ local function spawnStatsMatLabels()
     for _, tag in ipairs({EVO_HINT_TEXT_TAG, PAY_TEXT_TAG, USE_MASTER_TEXT_TAG}) do
         clearTaggedTexts(tag)
     end
+    clearNotedStatsTexts(LABEL_TEXT_KINDS)
     evoHintTexts, payTexts, useMasterTexts = {}, {}, {}
 
     local specs = {
-        { CONFIG.EVO_HINT_BUTTON, EVO_HINT_TEXT_TAG, evoHintTexts },
-        { CONFIG.PAY_BUTTON, PAY_TEXT_TAG, payTexts },
-        { CONFIG.USE_MASTER_BUTTON, USE_MASTER_TEXT_TAG, useMasterTexts }
+        { CONFIG.EVO_HINT_BUTTON, "evo_hint", evoHintTexts },
+        { CONFIG.PAY_BUTTON, "pay", payTexts },
+        { CONFIG.USE_MASTER_BUTTON, "use_master", useMasterTexts }
     }
     for _, spec in ipairs(specs) do
         local buttonCfg = spec[1]
