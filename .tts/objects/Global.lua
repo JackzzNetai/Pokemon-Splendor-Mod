@@ -5,7 +5,7 @@
 --         Those parameters may still contain one-off numbers.
 -- ==============================================================================
 
-local CONSTANTS = {
+CONSTANTS = {
     COLOR_ORANGE = {1, 0.6, 0},
     COLOR_WHITE = {1, 1, 1},
     COLOR_GREEN = {0, 0.75, 0},

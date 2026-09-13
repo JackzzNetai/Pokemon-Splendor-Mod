@@ -1,3 +1,5 @@
+local constants = Global.getTable("CONSTANTS")
+
 function onLoad()
     local buttonParams = {
         click_function = "onSetupButtonClicked",
@@ -101,7 +103,7 @@ function setupDeck(deckKey, dealCount, isRowDeal, config)
                 printToAll(
                     "Warning: " .. deckKey .. " deck has " .. newDeck.getQuantity() ..
                     " cards (expected " .. expected .. ").",
-                    {1, 0.6, 0}
+                    constants.COLOR_ORANGE
                 )
             end
 
@@ -128,7 +130,7 @@ function setupDeck(deckKey, dealCount, isRowDeal, config)
         end,
         5,
         function()
-            printToAll("setupDeck timed out for " .. deckKey, {1, 0.4, 0})
+            printToAll("setupDeck timed out for " .. deckKey, constants.COLOR_ORANGE)
         end
     )
 end
@@ -163,6 +165,6 @@ function onSetupButtonClicked(clickedObject, playerColor, isAltClick)
     spawnTokenStack("quickball", standardTokenCount, config)
     spawnTokenStack("masterball", 5, config)
 
-    printToAll("初始化完毕", {0.2, 0.8, 0.2})
+    printToAll("初始化完毕", constants.COLOR_GREEN)
     Global.call("setGameInitialized", true)
 end
