@@ -17,7 +17,8 @@ end
 
 function spawnCircularTile(imageUrl, tag)
     local object = spawnObject({
-        type = "Custom_Tile"
+        type = "Custom_Tile",
+        rotation = {0, 180, 0}
     })
     object.setCustomObject({
         image = imageUrl,
@@ -42,12 +43,10 @@ function spawnTokenStack(tokenKey, count, config)
     
     local baseToken = spawnCircularTile(url, tag)
     baseToken.setPosition(spawnPos)
-    baseToken.setRotation({0, 180, 0})
     
     for i = 1, count - 1 do
         local newToken = spawnCircularTile(url, tag)
-        newToken.setPosition({spawnPos[1], spawnPos[2] + (i * 0.5), spawnPos[3]})
-        newToken.setRotation({0, 180, 0})
+        newToken.setPosition({spawnPos[1], spawnPos[2] + (i * 0.3), spawnPos[3]})
         
         baseToken.putObject(newToken)
     end

@@ -27,7 +27,7 @@ local CONSTANTS = {
     STATS_MAT_SURFACE_Y = 0.51,
     STATS_ICON_Y = 27,
     DECK_Y  = 1.692,
-    TOKEN_Y = 2.29,
+    TOKEN_Y = 2.7,
     TOKEN_Z = -5.81,
 }
 
