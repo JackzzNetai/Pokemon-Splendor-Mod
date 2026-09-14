@@ -1,4 +1,5 @@
 local constants = Global.getTable("CONSTANTS")
+local config = Global.getTable("CONFIG")
 
 function onLoad()
     local buttonParams = {
@@ -17,7 +18,7 @@ function onLoad()
     self.createButton(buttonParams)
 end
 
-function spawnCircularTile(imageUrl, tag)
+local function spawnCircularTile(imageUrl, tag)
     local object = spawnObject({
         type = "Custom_Tile",
         rotation = {0, 180, 0}
@@ -32,7 +33,7 @@ function spawnCircularTile(imageUrl, tag)
     return object
 end
 
-function spawnTokenStack(tokenKey, count, config)
+local function spawnTokenStack(tokenKey, count)
     local tag = config.TAGS[tokenKey]
     local spawnPos = config.TOKEN_POSITIONS[tokenKey]
     local url = config.TOKEN_TILE_URLS[tokenKey]
@@ -54,17 +55,122 @@ function spawnTokenStack(tokenKey, count, config)
     end
 end
 
-function findReadyDeck(tag, zone, expected, allowExtra)
+-- Does not collect Cards/Decks inside CONFIG.EXCLUDE_ZONE.
+local function collectCardsAndDecks()
+    local zone = config.EXCLUDE_ZONE
+    local cards = {}
+    local decks = {}
+    for _, obj in ipairs(getObjects()) do
+        if Global.call("isAlive", obj) then
+            local objType = obj.type
+            if objType == "Card" or objType == "Deck" then
+                local pos = obj.getPosition()
+                if not Global.call("inXZZone", { pos = pos, zone = zone }) then
+                    if objType == "Card" then
+                        table.insert(cards, obj)
+                    else
+                        table.insert(decks, obj)
+                    end
+                end
+            end
+        end
+    end
+    return { cards = cards, decks = decks }
+end
+
+local function placeCardByTag(card)
+    if not Global.call("isAlive", card) then
+        return
+    end
+    local tag = Global.call("firstTag", card)
+    local dest = tag ~= nil and config.DECK_POSITIONS[tag] or nil
+    if dest == nil then
+        local notes = card.getGMNotes()
+        if notes == nil or notes == "" then
+            notes = "(empty GM notes)"
+        end
+        printToAll(
+            "Warning: card '" .. notes .. "' has unknown tag '"
+                .. tostring(tag) .. "'.",
+            constants.COLOR_ORANGE
+        )
+        return
+    end
+    card.setPosition(dest)
+end
+
+local function redistributeGiantDeck(giant, onDone)
+    if not Global.call("isAlive", giant) then
+        onDone()
+        return
+    end
+    if giant.type == "Card" then
+        placeCardByTag(giant)
+        onDone()
+        return
+    end
+    local pos = giant.getPosition()
+    giant.takeObject({
+        position = {pos.x, pos.y + 1.5, pos.z},
+        rotation = giant.getRotation(),
+        smooth = false,
+        callback_function = function(taken)
+            placeCardByTag(taken)
+            local remainder = giant.remainder
+            if Global.call("isAlive", remainder) then
+                placeCardByTag(remainder)
+                onDone()
+                return
+            end
+            if not Global.call("isAlive", giant) then
+                onDone()
+                return
+            end
+            Wait.frames(function()
+                redistributeGiantDeck(giant, onDone)
+            end, 1)
+        end
+    })
+end
+
+local function mergeToCenterGiantDeck(collected, onDone)
+    local all = {}
+    for _, card in ipairs(collected.cards) do
+        if Global.call("isAlive", card) then
+            table.insert(all, card)
+        end
+    end
+    for _, deck in ipairs(collected.decks) do
+        if Global.call("isAlive", deck) then
+            table.insert(all, deck)
+        end
+    end
+    if #all == 0 then
+        onDone(nil)
+        return
+    end
+    if #all == 1 then
+        local giant = all[1]
+        giant.setPosition({0, constants.DECK_Y, 0})
+        onDone(giant)
+        return
+    end
+    local grouped = group(all)
+    local giant = grouped ~= nil and grouped[1] or nil
+    Wait.frames(function()
+        if Global.call("isAlive", giant) then
+            giant.setPosition({0, constants.DECK_Y, 0})
+        end
+        onDone(giant)
+    end, 1)
+end
+
+local function findDeckWithExactCount(tag, zone, expected)
     for _, obj in ipairs(getObjectsWithTag(tag)) do
-        if obj.type == "Deck" and not obj.isDestroyed() then
+        if obj.type == "Deck" and Global.call("isAlive", obj) then
             local pos = obj.getPosition()
             if not Global.call("inXZZone", { pos = pos, zone = zone }) then
-                local quantity = obj.getQuantity()
-                if allowExtra then
-                    if quantity >= expected then
-                        return obj
-                    end
-                elseif quantity == expected then
+                if obj.getQuantity() == expected then
                     return obj
                 end
             end
@@ -73,41 +179,20 @@ function findReadyDeck(tag, zone, expected, allowExtra)
     return nil
 end
 
-function setupDeck(deckKey, dealCount, isRowDeal, config)
+local function finishSetupDeck(deckKey, dealCount, isRowDeal, onComplete)
     local tag = config.TAGS[deckKey]
     local targetPos = config.DECK_POSITIONS[deckKey]
     local expected = config.DECK_SIZES[deckKey]
-    local allowExtra = (deckKey == "rare" or deckKey == "legendary")
     local zone = config.EXCLUDE_ZONE
-    local cardList = {}
 
-    -- 1. Gather all cards OUTSIDE the exclude zone
-    for _, obj in ipairs(getObjectsWithTag(tag)) do
-        local pos = obj.getPosition()
-        if not Global.call("inXZZone", { pos = pos, zone = zone }) then
-            table.insert(cardList, obj)
-        end
-    end
-
-    if #cardList == 0 then return end
-    group(cardList)
-
-    -- 2. Wait until the merged deck reaches the expected quantity
-    -- Wait.condition(toRunFunc, conditionFunc, timeout, timeoutFunc)
     Wait.condition(
         function()
-            local newDeck = findReadyDeck(tag, zone, expected, allowExtra)
-            if not newDeck then return end
-
-            if allowExtra and newDeck.getQuantity() > expected then
-                printToAll(
-                    "Warning: " .. deckKey .. " deck has " .. newDeck.getQuantity() ..
-                    " cards (expected " .. expected .. ").",
-                    constants.COLOR_ORANGE
-                )
+            local newDeck = findDeckWithExactCount(tag, zone, expected)
+            if not newDeck then
+                onComplete()
+                return
             end
 
-            -- 3. Move, shuffle, and deal
             newDeck.setRotation({180, 0, 0}) -- face-down
             newDeck.randomize()
             newDeck.setPositionSmooth(targetPos, false, false)
@@ -124,47 +209,66 @@ function setupDeck(deckKey, dealCount, isRowDeal, config)
                     end
                 end
             end
+            onComplete()
         end,
         function()
-            return findReadyDeck(tag, zone, expected, allowExtra) ~= nil
+            return findDeckWithExactCount(tag, zone, expected) ~= nil
         end,
         5,
         function()
             printToAll("setupDeck timed out for " .. deckKey, constants.COLOR_ORANGE)
+            onComplete()
         end
     )
+end
+
+local function startFinishSetupDecks()
+    local pending = 5
+    local function onTierDone()
+        pending = pending - 1
+        if pending == 0 then
+            printToAll("初始化完毕", constants.COLOR_GREEN)
+            Global.call("setGameInitialized", true)
+        end
+    end
+    finishSetupDeck("stage1", 4, true, onTierDone)
+    finishSetupDeck("stage2", 4, true, onTierDone)
+    finishSetupDeck("stage3", 4, true, onTierDone)
+    finishSetupDeck("rare", 1, false, onTierDone)
+    finishSetupDeck("legendary", 1, false, onTierDone)
 end
 
 function onSetupButtonClicked(clickedObject, playerColor, isAltClick)
     Global.call("setGameInitialized", false)
     Global.call("clearPlayerStats")
 
-    local config = Global.getTable("CONFIG")
-
     -- Seated players minus spectators.
     -- Game rules: 4 → 7, 3 → 5, 2 → 4. Masterball stack is always 5.
     local activePlayerCount = #Player.getPlayers() - #Player.getSpectators()
     local standardTokenCount = 7
-    
+
     if activePlayerCount == 3 then
         standardTokenCount = 5
     elseif activePlayerCount < 3 then
         standardTokenCount = 4
     end
 
-    setupDeck("stage1", 4, true, config)
-    setupDeck("stage2", 4, true, config)
-    setupDeck("stage3", 4, true, config)
-    setupDeck("rare", 1, false, config)
-    setupDeck("legendary", 1, false, config)
+    spawnTokenStack("pokeball", standardTokenCount)
+    spawnTokenStack("greatball", standardTokenCount)
+    spawnTokenStack("ultraball", standardTokenCount)
+    spawnTokenStack("healball", standardTokenCount)
+    spawnTokenStack("quickball", standardTokenCount)
+    spawnTokenStack("masterball", 5)
 
-    spawnTokenStack("pokeball", standardTokenCount, config)
-    spawnTokenStack("greatball", standardTokenCount, config)
-    spawnTokenStack("ultraball", standardTokenCount, config)
-    spawnTokenStack("healball", standardTokenCount, config)
-    spawnTokenStack("quickball", standardTokenCount, config)
-    spawnTokenStack("masterball", 5, config)
-
-    printToAll("初始化完毕", constants.COLOR_GREEN)
-    Global.call("setGameInitialized", true)
+    local collected = collectCardsAndDecks()
+    mergeToCenterGiantDeck(collected, function(giant)
+        local function afterRedistribute()
+            startFinishSetupDecks()
+        end
+        if giant == nil then
+            afterRedistribute()
+            return
+        end
+        redistributeGiantDeck(giant, afterRedistribute)
+    end)
 end

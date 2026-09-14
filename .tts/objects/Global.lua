@@ -702,8 +702,16 @@ end
 -- Shared utils
 -- ============================================================================
 
-local function isAlive(object)
+function isAlive(object)
     return object ~= nil and not object.isDestroyed()
+end
+
+function firstTag(object)
+    local tags = object.getTags()
+    if tags == nil then
+        return nil
+    end
+    return tags[1]
 end
 
 local function printWarning(message)
@@ -712,14 +720,6 @@ end
 
 local function posXYZ(position)
     return position[1] or position.x, position[2] or position.y, position[3] or position.z
-end
-
-local function firstTag(object)
-    local tags = object.getTags()
-    if tags == nil then
-        return nil
-    end
-    return tags[1]
 end
 
 -- True if pos.x/z is inside zone {xMin,xMax,zMin,zMax}.
