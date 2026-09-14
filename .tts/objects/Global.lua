@@ -756,6 +756,7 @@ local SNAP_SETTLE_SECONDS = 0.1
 -- Skipping false→true in onLoad: no player input there, and onLoad only reads/configures.
 gameInitialized = true
 local pendingMarketRefills = {}
+local forgetPendingPayTokenByGuid -- assigned with token-zone helpers
 
 local function castDownAt(position)
     local x, y, z = posXYZ(position)
@@ -958,6 +959,7 @@ function onObjectDestroy(object)
         return
     end
     pendingMarketRefills[guid] = nil
+    forgetPendingPayTokenByGuid(guid)
 end
 
 -- ============================================================================
@@ -977,6 +979,40 @@ local TOKEN_TYPES = {
 
 -- Wiped by clearTokenState.
 local playerTokens = {}
+-- [color][guid] = true. Wiped by setGameInitialized(false).
+local pendingPayTokens = {}
+
+local function layoutPlayerTokenZone(color)
+    local zones = CONFIG.PLAYER_ZONES[color]
+    if zones == nil then
+        return
+    end
+    local tokenZone = getObjectFromGUID(zones.tokens)
+    if isAlive(tokenZone) then
+        tokenZone.LayoutZone.layout()
+    end
+end
+
+local function forgetPendingPayToken(color, guid)
+    local pending = pendingPayTokens[color]
+    if pending == nil or pending[guid] == nil then
+        return
+    end
+    pending[guid] = nil
+    if next(pending) == nil then
+        layoutPlayerTokenZone(color)
+    end
+end
+
+forgetPendingPayTokenByGuid = function(guid)
+    for color, pending in pairs(pendingPayTokens) do
+        if pending[guid] ~= nil then
+            forgetPendingPayToken(color, guid)
+            return
+        end
+    end
+end
+
 -- Wiped by clearCardState.
 local playerDiscounts = {}
 local playerVp = {}
@@ -1525,6 +1561,12 @@ local function handleZoneObject(zone, object, sign)
     local tokenColor = tokensZoneGuidToColor[guid]
     if tokenColor ~= nil then
         applyTokenDelta(tokenColor, object, sign)
+        if sign < 0 then
+            local objectGuid = object.getGUID()
+            if objectGuid ~= nil and objectGuid ~= "" then
+                forgetPendingPayToken(tokenColor, objectGuid)
+            end
+        end
         return
     end
     local cardColor = cardsZoneGuidToColor[guid]
@@ -1725,10 +1767,17 @@ local function trySpendCatchCostsToShow(color)
         end
     end
 
-    for _, item in ipairs(moving) do
-        item.obj.setPositionSmooth(CONFIG.TOKEN_POSITIONS[item.tokenType], false, false)
+    if #moving > 0 then
+        local pending = pendingPayTokens[color]
+        if pending == nil then
+            pending = {}
+            pendingPayTokens[color] = pending
+        end
+        for _, item in ipairs(moving) do
+            pending[item.obj.getGUID()] = true
+            item.obj.setPositionSmooth(CONFIG.TOKEN_POSITIONS[item.tokenType], false, false)
+        end
     end
-    tokenZone.LayoutZone.layout()
 
     lastAdjustedHoverCosts[color] = nil
     if useMasterAsWild[color] then
@@ -1762,6 +1811,7 @@ function setGameInitialized(value)
     gameInitialized = value and true or false
     if not gameInitialized then
         pendingMarketRefills = {}
+        pendingPayTokens = {}
     end
 end
 
