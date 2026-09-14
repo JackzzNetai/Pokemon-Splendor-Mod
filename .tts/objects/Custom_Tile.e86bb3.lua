@@ -52,8 +52,7 @@ local function spawnCircularTile(imageUrl, tag)
     object.setCustomObject({
         image = imageUrl,
         type = 2, -- forces the square image into a Circle
-        thickness = 0.15,
-        stackable = true
+        thickness = 0.15
     })
     object.addTag(tag)
     return object
@@ -70,14 +69,9 @@ local function spawnTokenStack(tokenKey, count)
         end
     end
 
-    local baseToken = spawnCircularTile(url, tag)
-    baseToken.setPosition(spawnPos)
-
-    for i = 1, count - 1 do
-        local newToken = spawnCircularTile(url, tag)
-        newToken.setPosition({spawnPos[1], spawnPos[2] + (i * 0.3), spawnPos[3]})
-
-        baseToken.putObject(newToken)
+    for i = 0, count - 1 do
+        local token = spawnCircularTile(url, tag)
+        token.setPosition({spawnPos[1], spawnPos[2] + (i * 0.3), spawnPos[3]})
     end
 end
 
