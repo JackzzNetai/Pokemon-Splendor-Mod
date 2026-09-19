@@ -28,6 +28,7 @@ CONSTANTS = {
     STATS_ICON_Y = 27,
     DECK_Y  = 1.692,
     TOKEN_Y = 2.7,
+    TOKEN_STACK_Y_OFFSET = 0.3,
     TOKEN_Z = -5.81,
 }
 
@@ -1726,6 +1727,20 @@ local function trySpendCatchCostsToShow(color)
     if lastAdjustedHoverCosts[color] == nil then
         return
     end
+    local pending = pendingPayTokens[color]
+    if pending == nil then
+        pending = {}
+        pendingPayTokens[color] = pending
+    end
+    -- Tokens still flying to a bank from a previous pay for this color.
+    -- Prevent double-clicking on the pay button.
+    if next(pending) ~= nil then
+        local player = Player[color]
+        if player ~= nil then
+            player.broadcast("支付中", CONSTANTS.COLOR_RED)
+        end
+        return
+    end
     ensurePlayerTokenState(color)
     local tokens = playerTokens[color]
     local pay = {}
@@ -1745,19 +1760,27 @@ local function trySpendCatchCostsToShow(color)
     for tokenType, amount in pairs(pay) do
         needed[tokenType] = amount
     end
+    -- moving[tokenType] = { tokenObject1, tokenObject2, ... }
     local moving = {}
     local tokenZone = getObjectFromGUID(CONFIG.PLAYER_ZONES[color].tokens)
     if isAlive(tokenZone) then
         for _, obj in ipairs(tokenZone.getObjects()) do
             local tokenType = tokenTypeOf(obj)
             if tokenType ~= nil and needed[tokenType] > 0 then
-                table.insert(moving, { obj = obj, tokenType = tokenType })
+                pending[obj.getGUID()] = true
+                local tokenObjectList = moving[tokenType]
+                if tokenObjectList == nil then
+                    tokenObjectList = {}
+                    moving[tokenType] = tokenObjectList
+                end
+                table.insert(tokenObjectList, obj)
                 needed[tokenType] = needed[tokenType] - 1
             end
         end
     end
     for tokenType, left in pairs(needed) do
         if left > 0 then
+            pendingPayTokens[color] = {}
             printWarning(
                 "Warning: " .. color .. " " .. tokenType
                     .. " zone cannot supply payment; needed "
@@ -1767,15 +1790,15 @@ local function trySpendCatchCostsToShow(color)
         end
     end
 
-    if #moving > 0 then
-        local pending = pendingPayTokens[color]
-        if pending == nil then
-            pending = {}
-            pendingPayTokens[color] = pending
-        end
-        for _, item in ipairs(moving) do
-            pending[item.obj.getGUID()] = true
-            item.obj.setPositionSmooth(CONFIG.TOKEN_POSITIONS[item.tokenType], false, false)
+    for tokenType, tokenObjectList in pairs(moving) do
+        local base = CONFIG.TOKEN_POSITIONS[tokenType]
+        local bx, by, bz = base[1], base[2], base[3]
+        for i, obj in ipairs(tokenObjectList) do
+            obj.setPositionSmooth(
+                { bx, by + (i - 1) * CONSTANTS.TOKEN_STACK_Y_OFFSET, bz },
+                false,
+                false
+            )
         end
     end
 

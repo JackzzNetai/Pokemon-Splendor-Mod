@@ -71,7 +71,11 @@ local function spawnTokenStack(tokenKey, count)
 
     for i = 0, count - 1 do
         local token = spawnCircularTile(url, tag)
-        token.setPosition({spawnPos[1], spawnPos[2] + (i * 0.3), spawnPos[3]})
+        token.setPosition({
+            spawnPos[1],
+            spawnPos[2] + (i * constants.TOKEN_STACK_Y_OFFSET),
+            spawnPos[3]
+        })
     end
 end
 
