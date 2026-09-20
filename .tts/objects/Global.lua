@@ -1571,9 +1571,9 @@ local function cardInPlayerHand(object, color)
     return false
 end
 
--- Hand: any orientation. Market: face-up in MARKET_ZONE only.
+-- Hand: any orientation. Market: face-up in MARKET_ZONE only. Card or Deck.
 local function showsCatchCostOnHover(object, color)
-    if not isAlive(object) or object.type ~= "Card" then
+    if not isAlive(object) or (object.type ~= "Card" and object.type ~= "Deck") then
         return false
     end
     if cardInPlayerHand(object, color) then
@@ -1606,7 +1606,14 @@ function onObjectHover(playerColor, hoveredObject)
     if PER_TOKEN_TEXT_STORES.cost[playerColor] == nil then
         return
     end
-    local id = hoveredObject.getGMNotes()
+    -- Deck: visible face is last in getObjects() (index 1 is draw-top / table-side).
+    local id
+    if hoveredObject.type == "Deck" then
+        local cards = hoveredObject.getObjects()
+        id = cards[#cards].gm_notes
+    else
+        id = hoveredObject.getGMNotes()
+    end
     if id == nil or id == "" then
         warnEmptyCardGmNote(playerColor, hoveredObject)
         return
