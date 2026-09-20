@@ -980,40 +980,7 @@ local TOKEN_TYPES = {
 
 -- Wiped by clearTokenState.
 local playerTokens = {}
--- [color][guid] = true. Wiped by setGameInitialized(false).
-local pendingPayTokens = {}
-
-local function layoutPlayerTokenZone(color)
-    local zones = CONFIG.PLAYER_ZONES[color]
-    if zones == nil then
-        return
-    end
-    local tokenZone = getObjectFromGUID(zones.tokens)
-    if isAlive(tokenZone) then
-        tokenZone.LayoutZone.layout()
-    end
-end
-
-local function forgetPendingPayToken(color, guid)
-    local pending = pendingPayTokens[color]
-    if pending == nil or pending[guid] == nil then
-        return
-    end
-    pending[guid] = nil
-    if next(pending) == nil then
-        layoutPlayerTokenZone(color)
-    end
-end
-
-forgetPendingPayTokenByGuid = function(guid)
-    for color, pending in pairs(pendingPayTokens) do
-        if pending[guid] ~= nil then
-            forgetPendingPayToken(color, guid)
-            return
-        end
-    end
-end
-
+local pendingPayTokens = {} -- [color][guid] = true
 -- Wiped by clearCardState.
 local playerDiscounts = {}
 local playerVp = {}
@@ -1036,6 +1003,38 @@ local PER_COLOR_TEXT_STORES = {
     vp         = {},
     use_master = {}
 }
+
+local function layoutPlayerTokenZone(color)
+    local zones = CONFIG.PLAYER_ZONES[color]
+    if zones == nil then
+        return
+    end
+    local tokenZone = getObjectFromGUID(zones.tokens)
+    if isAlive(tokenZone) then
+        tokenZone.LayoutZone.layout()
+    end
+end
+
+local function forgetPendingPayToken(color, guid)
+    local pending = pendingPayTokens[color]
+    if pending[guid] == nil then
+        return
+    end
+    pending[guid] = nil
+    if next(pending) == nil then
+        layoutPlayerTokenZone(color)
+    end
+end
+
+forgetPendingPayTokenByGuid = function(guid)
+    for color, pending in pairs(pendingPayTokens) do
+        if pending[guid] ~= nil then
+            forgetPendingPayToken(color, guid)
+            return
+        end
+    end
+end
+
 
 local function zeroCountsByTokenType()
     local counts = {}
@@ -1067,6 +1066,7 @@ end
 local function clearTokenState()
     for color, _ in pairs(CONFIG.PLAYER_ZONES) do
         playerTokens[color] = zeroCountsByTokenType()
+        pendingPayTokens[color] = {}
     end
 end
 
@@ -1229,14 +1229,6 @@ local function setVpDisplayTextValue(color, count)
     setTextToolValue(PER_COLOR_TEXT_STORES.vp[color], count)
 end
 
-local function countOrZero(map, color, key)
-    local byColor = map[color]
-    if byColor == nil then
-        return 0
-    end
-    return byColor[key] or 0
-end
-
 -- Returns clamped value; warns if delta would go negative.
 local function applyClampedDelta(current, delta, warning)
     local nextCount = current + delta
@@ -1247,18 +1239,11 @@ local function applyClampedDelta(current, delta, warning)
     return nextCount
 end
 
-local function ensurePlayerTokenState(color)
-    if playerTokens[color] == nil then
-        playerTokens[color] = zeroCountsByTokenType()
-    end
-end
-
 local function applyTokenDelta(color, object, sign)
     local tokenType = tokenTypeOf(object)
     if tokenType == nil then
         return
     end
-    ensurePlayerTokenState(color)
     local counts = playerTokens[color]
     local nextCount = applyClampedDelta(
         counts[tokenType],
@@ -1286,21 +1271,6 @@ local function initPlayerTokensFromZones()
                 counts[tokenType] = counts[tokenType] + 1
             end
         end)
-    end
-end
-
-local function ensurePlayerCardState(color)
-    if playerDiscounts[color] == nil then
-        playerDiscounts[color] = zeroCountsByTokenType()
-    end
-    if playerVp[color] == nil then
-        playerVp[color] = 0
-    end
-    if playerCards[color] == nil then
-        playerCards[color] = {}
-    end
-    if evolveTargets[color] == nil then
-        evolveTargets[color] = {}
     end
 end
 
@@ -1337,7 +1307,6 @@ local function applyCardDelta(color, object, sign)
     if id == nil then
         return
     end
-    ensurePlayerCardState(color)
 
     local discounts = playerDiscounts[color]
     for tokenType, amount in pairs(entry.discount) do
@@ -1616,8 +1585,6 @@ local function applyCatchCostsFromEntry(color, entry)
     if PER_TOKEN_TEXT_STORES.cost[color] == nil then
         return
     end
-    ensurePlayerCardState(color)
-    ensurePlayerTokenState(color)
     local catch = entry.catch_cost or {}
     local discounts = playerDiscounts[color]
     local adjusted = {}
@@ -1675,7 +1642,7 @@ end
 
 local function canEvolveWithDiscounts(color, cost)
     for tokenType, amount in pairs(cost) do
-        if countOrZero(playerDiscounts, color, tokenType) < amount then
+        if (playerDiscounts[color][tokenType] or 0) < amount then
             return false
         end
     end
@@ -1701,7 +1668,6 @@ function onEvoHintClicked(obj, playerColor, isAltClick)
     if color == nil then
         return
     end
-    ensurePlayerCardState(color)
     local player = Player[color]
     if player == nil then
         return
@@ -1728,10 +1694,6 @@ local function trySpendCatchCostsToShow(color)
         return
     end
     local pending = pendingPayTokens[color]
-    if pending == nil then
-        pending = {}
-        pendingPayTokens[color] = pending
-    end
     -- Tokens still flying to a bank from a previous pay for this color.
     -- Prevent double-clicking on the pay button.
     if next(pending) ~= nil then
@@ -1741,7 +1703,6 @@ local function trySpendCatchCostsToShow(color)
         end
         return
     end
-    ensurePlayerTokenState(color)
     local tokens = playerTokens[color]
     local pay = {}
     for tokenType, _ in pairs(TOKEN_TYPES) do
@@ -1834,7 +1795,6 @@ function setGameInitialized(value)
     gameInitialized = value and true or false
     if not gameInitialized then
         pendingMarketRefills = {}
-        pendingPayTokens = {}
     end
 end
 
