@@ -151,23 +151,17 @@ local function redistributeCenterDeck(centerDeck, onDone)
 end
 
 local function buildCenterDeck(objects, onDone)
-    local all = {}
-    for _, obj in ipairs(objects) do
-        if isAlive(obj) then
-            table.insert(all, obj)
-        end
-    end
-    if #all == 0 then
+    if #objects == 0 then
         onDone(nil)
         return
     end
-    if #all == 1 then
-        local centerDeck = all[1]
+    if #objects == 1 then
+        local centerDeck = objects[1]
         centerDeck.setPosition({0, constants.DECK_Y, 0})
         onDone(centerDeck)
         return
     end
-    local grouped = group(all)
+    local grouped = group(objects)
     local centerDeck = grouped ~= nil and grouped[1] or nil
     Wait.frames(function()
         if isAlive(centerDeck) then

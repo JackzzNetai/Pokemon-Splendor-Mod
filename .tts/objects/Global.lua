@@ -719,6 +719,13 @@ local function printWarning(message)
     printToAll(message, CONSTANTS.COLOR_ORANGE)
 end
 
+local function broadcastRed(color, message)
+    local player = Player[color]
+    if player ~= nil then
+        player.broadcast(message, CONSTANTS.COLOR_RED)
+    end
+end
+
 local function posXYZ(position)
     return position[1] or position.x, position[2] or position.y, position[3] or position.z
 end
@@ -864,10 +871,6 @@ local function findMarketTake(object)
     return nil
 end
 
-local function findTierDeck(tier)
-    return deckSourceAt(CONFIG.DECK_POSITIONS[tier])
-end
-
 local function takeFromDeckTo(deck, destPosition)
     if not isAlive(deck) then
         return
@@ -891,11 +894,11 @@ local function takeFromDeckTo(deck, destPosition)
 end
 
 local function refillSlot(tier, slotIndex)
-    takeFromDeckTo(findTierDeck(tier), getSlotPosition(tier, slotIndex))
+    takeFromDeckTo(deckSourceAt(CONFIG.DECK_POSITIONS[tier]), getSlotPosition(tier, slotIndex))
 end
 
 local function revealPileTop(tier)
-    takeFromDeckTo(findTierDeck(tier), getPileRevealPosition(tier))
+    takeFromDeckTo(deckSourceAt(CONFIG.DECK_POSITIONS[tier]), getPileRevealPosition(tier))
 end
 
 function onObjectPickUp(playerColor, object)
@@ -1129,6 +1132,13 @@ local function warnMissingCardDatabase(color, id, object)
     printWarning(
         "Warning: " .. tostring(color) .. " card GM note '" .. tostring(id)
             .. "' (GUID " .. object.getGUID() .. ") not in CARD_DATABASE."
+    )
+end
+
+local function warnEmptyCardGmNote(color, object)
+    printWarning(
+        "Warning: " .. tostring(color) .. " card has empty GM note (GUID "
+            .. object.getGUID() .. "); not in CARD_DATABASE."
     )
 end
 
@@ -1459,36 +1469,30 @@ end
 
 -- Save glyphs vs zone-derived tables. Table wins on mismatch.
 local function checkStatsDisplaysAgainstTables()
+    local function check(color, key, obj, expected)
+        local shown = displayedNumber(obj)
+        if shown ~= expected then
+            warnAndFixStatsText(color, key, obj, expected)
+        end
+    end
     for color, _ in pairs(CONFIG.PLAYER_ZONES) do
         for tokenType, _ in pairs(TOKEN_TYPES) do
             local tokenStore = PER_TOKEN_TEXT_STORES.token[color]
             local tokenObj = tokenStore and tokenStore[tokenType]
             if tokenObj ~= nil then
-                local expected = playerTokens[color][tokenType] or 0
-                local shown = displayedNumber(tokenObj)
-                if shown ~= expected then
-                    warnAndFixStatsText(color, tokenType .. " tokens", tokenObj, expected)
-                end
+                check(color, tokenType .. " tokens", tokenObj, playerTokens[color][tokenType] or 0)
             end
             if tokenType ~= "masterball" then
                 local discountStore = PER_TOKEN_TEXT_STORES.discount[color]
                 local discountObj = discountStore and discountStore[tokenType]
                 if discountObj ~= nil then
-                    local expected = -(playerDiscounts[color][tokenType] or 0)
-                    local shown = displayedNumber(discountObj)
-                    if shown ~= expected then
-                        warnAndFixStatsText(color, tokenType .. " discount", discountObj, expected)
-                    end
+                    check(color, tokenType .. " discount", discountObj, -(playerDiscounts[color][tokenType] or 0))
                 end
             end
         end
         local vpObj = PER_COLOR_TEXT_STORES.vp[color]
         if vpObj ~= nil then
-            local expected = playerVp[color] or 0
-            local shown = displayedNumber(vpObj)
-            if shown ~= expected then
-                warnAndFixStatsText(color, "VP", vpObj, expected)
-            end
+            check(color, "VP", vpObj, playerVp[color] or 0)
         end
     end
 end
@@ -1604,10 +1608,7 @@ function onObjectHover(playerColor, hoveredObject)
     end
     local id = hoveredObject.getGMNotes()
     if id == nil or id == "" then
-        printWarning(
-            "Warning: " .. tostring(playerColor) .. " card has empty GM note (GUID "
-                .. hoveredObject.getGUID() .. "); not in CARD_DATABASE."
-        )
+        warnEmptyCardGmNote(playerColor, hoveredObject)
         return
     end
     local entry = CARD_DATABASE[id]
@@ -1653,10 +1654,7 @@ local function pingEvoHintCards(color, player, cards, shouldPing)
     for _, card in ipairs(cards) do
         local id = card.getGMNotes()
         if id == nil or id == "" then
-            printWarning(
-                "Warning: " .. tostring(color) .. " card has empty GM note (GUID "
-                    .. card.getGUID() .. "); not in CARD_DATABASE."
-            )
+            warnEmptyCardGmNote(color, card)
         elseif shouldPing(truncatedCardId(id)) then
             player.pingTable(card.getPosition())
         end
@@ -1697,10 +1695,7 @@ local function trySpendCatchCostsToShow(color)
     -- Tokens still flying to a bank from a previous pay for this color.
     -- Prevent double-clicking on the pay button.
     if next(pending) ~= nil then
-        local player = Player[color]
-        if player ~= nil then
-            player.broadcast("支付中", CONSTANTS.COLOR_RED)
-        end
+        broadcastRed(color, "支付进行中")
         return
     end
     local tokens = playerTokens[color]
@@ -1709,25 +1704,18 @@ local function trySpendCatchCostsToShow(color)
         local amount = catchCostToShow(color, tokenType)
         pay[tokenType] = amount
         if amount > tokens[tokenType] then
-            local player = Player[color]
-            if player ~= nil then
-                player.broadcast("精灵球不足", CONSTANTS.COLOR_RED)
-            end
+            broadcastRed(color, "精灵球不足")
             return
         end
     end
 
-    local needed = {}
-    for tokenType, amount in pairs(pay) do
-        needed[tokenType] = amount
-    end
     -- moving[tokenType] = { tokenObject1, tokenObject2, ... }
     local moving = {}
     local tokenZone = getObjectFromGUID(CONFIG.PLAYER_ZONES[color].tokens)
     if isAlive(tokenZone) then
         for _, obj in ipairs(tokenZone.getObjects()) do
             local tokenType = tokenTypeOf(obj)
-            if tokenType ~= nil and needed[tokenType] > 0 then
+            if tokenType ~= nil and pay[tokenType] > 0 then
                 pending[obj.getGUID()] = true
                 local tokenObjectList = moving[tokenType]
                 if tokenObjectList == nil then
@@ -1735,17 +1723,17 @@ local function trySpendCatchCostsToShow(color)
                     moving[tokenType] = tokenObjectList
                 end
                 table.insert(tokenObjectList, obj)
-                needed[tokenType] = needed[tokenType] - 1
+                pay[tokenType] = pay[tokenType] - 1
             end
         end
     end
-    for tokenType, left in pairs(needed) do
+    for tokenType, left in pairs(pay) do
         if left > 0 then
             pendingPayTokens[color] = {}
             printWarning(
                 "Warning: " .. color .. " " .. tokenType
                     .. " zone cannot supply payment; needed "
-                    .. tostring(pay[tokenType]) .. "."
+                    .. tostring(left) .. " more."
             )
             return
         end
@@ -1812,16 +1800,11 @@ function clearPlayerStats()
     end
 end
 
-local function getTokenUiAssets()
+local function registerTokenUiAssets()
     local assets = {}
     for name, url in pairs(CONFIG.TOKEN_SPRITE_URLS) do
         table.insert(assets, { name = name, url = url })
     end
-    return assets
-end
-
-local function registerTokenUiAssets()
-    local assets = getTokenUiAssets()
     UI.setCustomAssets(assets)
     -- Object UI has its own asset list; reuse the same sprites on every mat.
     for _, obj in ipairs(getObjects()) do
