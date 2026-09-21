@@ -766,6 +766,48 @@ gameInitialized = true
 local pendingMarketRefills = {}
 local forgetPendingPayTokenByGuid -- assigned with token-zone helpers
 
+-- ============================================================================
+-- Player token counts (one Layout Zone per color)
+-- Player card discount / VP (five Layout Zones per color, joined)
+-- ============================================================================
+
+-- Token types used by zeroCountsByTokenType and per-token loops.
+local TOKEN_TYPES = {
+    pokeball   = true,
+    greatball  = true,
+    ultraball  = true,
+    healball   = true,
+    quickball  = true,
+    masterball = true
+}
+
+-- Wiped by clearTokenState.
+local playerTokens = {}
+local pendingPayTokens = {} -- [color][guid] = true
+-- Wiped by clearCardState.
+local playerDiscounts = {}
+local playerVp = {}
+local playerCards = {}
+local evolveTargets = {} -- [color][target(truncated)] = source.evolution_cost
+-- Wiped by clearHoverCosts.
+local lastAdjustedHoverCosts = {}
+local useMasterAsWild = {}
+local disableHoverCost = {} -- Freeze catch-cost hover while this color is holding anything
+-- Zone GUID → owner color.
+local tokensZoneGuidToColor = {}
+local cardsZoneGuidToColor = {}
+local matGuidToColor = {}
+-- Bound stats 3DTexts. Per-token kinds: store[color][tokenType]; others: store[color].
+local PER_TOKEN_TEXT_STORES = {
+    discount = {},
+    cost     = {},
+    token    = {}
+}
+local PER_COLOR_TEXT_STORES = {
+    vp         = {},
+    use_master = {}
+}
+
 local function castDownAt(position)
     local x, y, z = posXYZ(position)
     return Physics.cast({
@@ -905,6 +947,8 @@ function onObjectPickUp(playerColor, object)
     if not gameInitialized then
         return
     end
+    -- Any object; do not change last hover costs.
+    disableHoverCost[playerColor] = true
     if not isAlive(object) then
         return
     end
@@ -919,16 +963,16 @@ function onObjectPickUp(playerColor, object)
 end
 
 function onObjectDrop(playerColor, object)
+    if not gameInitialized then
+        return
+    end
+    -- Any object; do not change last hover costs.
+    disableHoverCost[playerColor] = false
     if not isAlive(object) then
         return
     end
     local guid = object.getGUID()
     if guid == nil or guid == "" then
-        return
-    end
-
-    if not gameInitialized then
-        pendingMarketRefills[guid] = nil
         return
     end
 
@@ -965,47 +1009,6 @@ function onObjectDestroy(object)
     pendingMarketRefills[guid] = nil
     forgetPendingPayTokenByGuid(guid)
 end
-
--- ============================================================================
--- Player token counts (one Layout Zone per color)
--- Player card discount / VP (five Layout Zones per color, joined)
--- ============================================================================
-
--- Token types used by zeroCountsByTokenType and per-token loops.
-local TOKEN_TYPES = {
-    pokeball   = true,
-    greatball  = true,
-    ultraball  = true,
-    healball   = true,
-    quickball  = true,
-    masterball = true
-}
-
--- Wiped by clearTokenState.
-local playerTokens = {}
-local pendingPayTokens = {} -- [color][guid] = true
--- Wiped by clearCardState.
-local playerDiscounts = {}
-local playerVp = {}
-local playerCards = {}
-local evolveTargets = {} -- [color][target(truncated)] = source.evolution_cost
--- Wiped by clearHoverCosts.
-local lastAdjustedHoverCosts = {}
-local useMasterAsWild = {}
--- Zone GUID → owner color.
-local tokensZoneGuidToColor = {}
-local cardsZoneGuidToColor = {}
-local matGuidToColor = {}
--- Bound stats 3DTexts. Per-token kinds: store[color][tokenType]; others: store[color].
-local PER_TOKEN_TEXT_STORES = {
-    discount = {},
-    cost     = {},
-    token    = {}
-}
-local PER_COLOR_TEXT_STORES = {
-    vp         = {},
-    use_master = {}
-}
 
 local function layoutPlayerTokenZone(color)
     local zones = CONFIG.PLAYER_ZONES[color]
@@ -1050,6 +1053,7 @@ end
 local function clearHoverCosts()
     lastAdjustedHoverCosts = {} -- Same as looping lastAdjustedHoverCosts[color] = nil
     useMasterAsWild = {} -- Practically same as looping useMasterAsWild[color] = false
+    disableHoverCost = {} -- Same as looping disableHoverCost[color] = nil
     for _, obj in pairs(PER_COLOR_TEXT_STORES.use_master) do
         if isAlive(obj) then
             obj.TextTool.setFontColor(CONSTANTS.COLOR_WHITE)
@@ -1589,7 +1593,7 @@ local function applyCatchCostsFromEntry(color, entry)
     if PER_TOKEN_TEXT_STORES.cost[color] == nil then
         return
     end
-    local catch = entry.catch_cost or {}
+    local catch = entry.catch_cost
     local discounts = playerDiscounts[color]
     local adjusted = {}
     for tokenType, _ in pairs(TOKEN_TYPES) do
@@ -1600,6 +1604,16 @@ local function applyCatchCostsFromEntry(color, entry)
 end
 
 function onObjectHover(playerColor, hoveredObject)
+    if disableHoverCost[playerColor] then
+        local player = Player[playerColor]
+        local held = player and player.getHoldingObjects()
+        if held ~= nil and next(held) ~= nil then
+            -- Skip cost updates while holding
+            return
+        end
+        -- hands are empty, drop was missed — clear the flag and continue
+        disableHoverCost[playerColor] = false
+    end
     if not showsCatchCostOnHover(hoveredObject, playerColor) then
         return
     end
