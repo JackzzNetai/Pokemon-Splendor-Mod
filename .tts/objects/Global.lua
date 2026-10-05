@@ -999,6 +999,14 @@ function onObjectDrop(playerColor, object)
     end, SNAP_SETTLE_SECONDS)
 end
 
+-- Disable drawing cards via number keys.
+function onObjectNumberTyped(object, player_color, number)
+    if object.type == "Deck" or object.type == "Card" then
+        broadcastRed(player_color, "仅支持鼠标拖拽")
+        return true
+    end
+end
+
 function onObjectDestroy(object)
     if object == nil then
         return
