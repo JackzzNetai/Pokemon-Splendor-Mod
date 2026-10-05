@@ -140,13 +140,16 @@ CONFIG = {
     },
 
     EVO_HINT_BUTTON = {
-        position = {-CONSTANTS.STATS_TEXT_VP_X, CONSTANTS.STATS_MAT_SURFACE_Y, -0.042}
+        position = {-CONSTANTS.STATS_TEXT_VP_X, CONSTANTS.STATS_MAT_SURFACE_Y, -0.042},
+        tooltip  = "左键：提示所有进化目标\n右键：提示满足条件的进化目标"
     },
     PAY_BUTTON = {
-        position = {-CONSTANTS.STATS_TEXT_VP_X, CONSTANTS.STATS_MAT_SURFACE_Y, -0.305}
+        position = {-CONSTANTS.STATS_TEXT_VP_X, CONSTANTS.STATS_MAT_SURFACE_Y, -0.305},
+        tooltip  = "自动返还面板当前显示数量的精灵球"
     },
     USE_MASTER_BUTTON = {
-        position = {-CONSTANTS.STATS_ICON_X.masterball, CONSTANTS.STATS_MAT_SURFACE_Y, -0.042}
+        position = {-CONSTANTS.STATS_ICON_X.masterball, CONSTANTS.STATS_MAT_SURFACE_Y, -0.042},
+        tooltip  = "打开/关闭：将大师球作为任意精灵球使用"
     }
 }
 
@@ -1520,7 +1523,8 @@ local function addStatsMatButton(mat, config, clickFunction)
         position       = config.position,
         width          = CONSTANTS.STATS_BUTTON_WIDTH,
         height         = CONSTANTS.STATS_BUTTON_HEIGHT,
-        color          = CONSTANTS.STATS_BUTTON_COLOR
+        color          = CONSTANTS.STATS_BUTTON_COLOR,
+        tooltip        = config.tooltip
     })
 end
 
