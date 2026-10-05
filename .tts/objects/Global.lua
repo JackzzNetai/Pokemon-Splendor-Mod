@@ -30,6 +30,7 @@ CONSTANTS = {
     TOKEN_Y = 2.7,
     TOKEN_STACK_Y_OFFSET = 0.3,
     TOKEN_Z = -5.81,
+    BANK_TOKEN_ROTATION = {0, 180, 0},
 }
 
 CONFIG = {
@@ -1769,6 +1770,7 @@ local function trySpendCatchCostsToShow(color)
                 false,
                 false
             )
+            obj.setRotationSmooth(CONSTANTS.BANK_TOKEN_ROTATION, false, false)
         end
     end
 

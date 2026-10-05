@@ -47,7 +47,7 @@ end
 local function spawnCircularTile(imageUrl, tag)
     local object = spawnObject({
         type = "Custom_Tile",
-        rotation = {0, 180, 0}
+        rotation = constants.BANK_TOKEN_ROTATION
     })
     object.setCustomObject({
         image = imageUrl,
