@@ -1515,7 +1515,7 @@ local function checkStatsDisplaysAgainstTables()
     end
 end
 
--- Classic UI click hitboxes; created in onLoad (not saved as table objects).
+-- Classic UI click hitboxes, not table objects. TTS does not save them, so onLoad has to create them again.
 local function addStatsMatButton(mat, config, clickFunction)
     mat.createButton({
         click_function = clickFunction,
