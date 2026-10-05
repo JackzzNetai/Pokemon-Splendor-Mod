@@ -806,7 +806,9 @@ local PER_TOKEN_TEXT_STORES = {
 }
 local PER_COLOR_TEXT_STORES = {
     vp         = {},
-    use_master = {}
+    use_master = {},
+    pay        = {},
+    evo_hint   = {}
 }
 
 local function castDownAt(position)
